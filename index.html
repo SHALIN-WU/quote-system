@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>物流報價系統</title>
+  <link rel="stylesheet" href="css/styles.css?v=8">
+  <script>
+    document.documentElement.classList.add(location.hostname === "127.0.0.1" ? "auth-skip" : "auth-locked");
+  </script>
+</head>
+<body>
+  <div id="auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-label="請輸入密碼">
+    <form id="auth-form" class="auth-card" method="post" action="#" autocomplete="off">
+      <img class="auth-logo" src="images/northgo-logo.png?v=4" alt="NorthGO">
+      <label>密碼
+        <input id="auth-password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="btn" id="auth-enter">進入</button>
+      <p id="auth-error" class="auth-error" role="alert"></p>
+    </form>
+  </div>
+
+  <header class="topbar no-print">
+    <div class="brand">
+      <img class="brand-logo" src="images/northgo-logo.png?v=4" alt="NorthGO">
+      <div>
+        <p class="eyebrow">Northgo Inc. Kaohsiung Branch</p>
+        <h1>物流報價系統</h1>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button type="button" class="btn ghost" id="new-quote">新報價</button>
+      <button type="button" class="btn" id="open-history">歷史報價</button>
+      <button type="button" class="btn ghost" id="btn-lock">鎖定</button>
+    </div>
+  </header>
+
+  <section class="hero no-print" aria-label="物流報價系統">
+    <div class="hero-copy">
+      <h2>物流報價系統</h2>
+      <p>匯入成本 → 計算材積與計費重量 → 產生報價單</p>
+    </div>
+  </section>
+
+  <nav class="steps no-print" aria-label="報價步驟">
+    <button type="button" data-step="import" aria-selected="true">1 匯入成本</button>
+    <button type="button" data-step="cargo" aria-selected="false">2 貨物資料</button>
+    <button type="button" data-step="price" aria-selected="false">3 成本與報價</button>
+    <button type="button" data-step="quote" aria-selected="false">4 報價單</button>
+  </nav>
+  <p id="status" class="status no-print" role="status"></p>
+
+  <main>
+    <section id="panel-import" class="panel">
+      <div class="panel-head">
+        <h2>匯入成本</h2>
+        <p>可上傳 Word、Excel、PDF，或貼上郵件文字。解析結果會加到表格，請再檢查單價、單位和幣別。</p>
+      </div>
+      <div class="import-grid">
+        <article class="card">
+          <h3>Word</h3>
+          <p>讀取 .docx 的文字後，依每一行抓項目。</p>
+          <button type="button" class="btn" id="btn-word">選擇 Word</button>
+          <input id="file-word" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        </article>
+        <article class="card">
+          <h3>Excel / CSV</h3>
+          <p>讀取第一個工作表。認得出表頭就直接帶入，否則請指定欄位。</p>
+          <button type="button" class="btn" id="btn-excel">選擇 Excel</button>
+          <input id="file-excel" type="file" accept=".xlsx,.xls,.csv,application/vnd.ms-excel,text/csv" hidden>
+        </article>
+        <article class="card">
+          <h3>PDF</h3>
+          <p>讀取每一頁文字。費用表格會依欄位整理後放到下方，再按「解析文字」。</p>
+          <button type="button" class="btn" id="btn-pdf">選擇 PDF</button>
+          <input id="file-pdf" type="file" accept=".pdf,application/pdf" hidden>
+        </article>
+        <article class="card card-wide">
+          <h3>貼上郵件文字</h3>
+          <p>一行一個費用，盡量寫出幣別和單位，例如 <span class="sample">運費 USD 3.2/kg</span></p>
+          <textarea id="paste-text" rows="6" placeholder="運費 USD 3.2/kg&#10;燃油附加費 USD 0.8/kg&#10;報關費 TWD 1,200/票&#10;海運費 USD 1,200/20GP&#10;目的港費用 USD 2,000/40HQ"></textarea>
+          <label class="fees-only">
+            <input id="fees-only" type="checkbox" checked>
+            只匯入費用（略過貨物與說明文字）
+          </label>
+          <div class="row-actions">
+            <button type="button" class="btn" id="parse-text">解析文字</button>
+            <label class="currency-default">預設幣別
+              <select id="default-currency" aria-label="預設幣別"></select>
+            </label>
+            <span class="hint">沒寫幣別時用這個。Ctrl + Enter 也可以解析</span>
+          </div>
+        </article>
+      </div>
+
+      <details id="word-text-wrap" class="fold" hidden>
+        <summary>Word 抽出的文字</summary>
+        <pre id="word-text"></pre>
+      </details>
+
+      <div id="excel-map" class="card" hidden>
+        <div class="row-between">
+          <h3>欄位對應</h3>
+          <button type="button" class="btn ghost" id="map-close">關閉</button>
+        </div>
+        <p class="hint">重新套用會更新這次 Excel 匯入的列，手動新增的列會留著。</p>
+        <div class="map-grid">
+          <label>表頭列<select id="map-header"></select></label>
+          <label>項目名稱<select id="map-name"></select></label>
+          <label>單價<select id="map-price"></select></label>
+          <label>計價單位<select id="map-unit"></select></label>
+          <label>幣別<select id="map-currency"></select></label>
+        </div>
+        <button type="button" class="btn" id="map-apply">套用對應</button>
+        <div id="map-preview" class="table-scroll"></div>
+      </div>
+
+      <div id="air-plans" class="card" hidden>
+        <h3>航空運費方案</h3>
+        <p class="hint">每一行是一個方案，請單選。只會把選中的方案加入成本；換選會換掉上一個方案的費用。括號裡的調漲寫在備註。</p>
+        <div id="air-plan-list"></div>
+      </div>
+
+      <details id="parse-report" class="fold" hidden>
+        <summary id="parse-report-summary"></summary>
+        <ul id="parse-report-list"></ul>
+      </details>
+      <div class="row-between">
+        <h3>成本項目</h3>
+        <div class="row-actions">
+          <button type="button" class="btn ghost" id="btn-remap" hidden>調整欄位對應</button>
+          <button type="button" class="btn ghost" id="clear-items">清空項目</button>
+          <button type="button" class="btn" id="add-item">＋ 新增一列</button>
+        </div>
+      </div>
+      <p id="import-empty" class="empty">尚未有成本項目。請匯入，或按「＋ 新增一列」。</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>項目名稱</th>
+              <th>成本單價</th>
+              <th>計價單位</th>
+              <th>最低收費</th>
+              <th>幣別</th>
+              <th>備註</th>
+              <th>不顯示</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="import-body"></tbody>
+        </table>
+      </div>
+      <div class="panel-foot">
+        <button type="button" class="btn" data-step-next="cargo">下一步：貨物資料</button>
+      </div>
+    </section>
+
+    <section id="panel-cargo" class="panel" hidden>
+      <div class="panel-head">
+        <h2>貨物資料</h2>
+        <p>CBM 以公分計算。選英吋時，長寬高會先換成公分。CBM = 長 × 寬 × 高 ÷ 1,000,000 × 件數。</p>
+      </div>
+      <div class="cargo-grid">
+        <div class="weight-field">
+          <div class="dim-head">
+            <span>毛重</span>
+            <div class="unit-switch" role="group" aria-label="毛重單位">
+              <button type="button" id="weight-unit-kg" data-weight-unit="kg" aria-pressed="true">公斤 kg</button>
+              <button type="button" id="weight-unit-lb" data-weight-unit="lb" aria-pressed="false">英磅 lb</button>
+            </div>
+          </div>
+          <input id="gross-weight" data-field="grossWeightKg" type="number" step="any" min="0" inputmode="decimal" aria-label="毛重">
+          <span id="weight-kg" class="hint" hidden></span>
+        </div>
+        <label>總件數
+          <input id="total-pieces" data-field="pieces" type="number" step="any" min="0" inputmode="decimal">
+          <span class="hint">空白時用下方各列件數加總</span>
+        </label>
+        <label>運輸方式
+          <select id="ship-mode" data-field="mode">
+            <option value="air">空運</option>
+            <option value="lcl">海運併櫃</option>
+            <option value="fcl">海運整櫃</option>
+            <option value="express">快遞</option>
+          </select>
+        </label>
+        <label id="container-field">櫃數
+          <input id="container-count" data-field="containerCount" type="number" step="any" min="0" inputmode="decimal">
+          <span class="hint">每櫃的數量用這裡。</span>
+        </label>
+      </div>
+
+      <div id="container-block" hidden>
+        <div class="row-between">
+          <h3>櫃型</h3>
+          <button type="button" class="btn" id="add-container">＋ 新增一列</button>
+        </div>
+        <p class="hint">一票可混櫃，例如 2 × 20GP 加 1 × 40HQ。有指定櫃型的每櫃費用，數量用該櫃型的櫃數；沒指定的用總櫃數。</p>
+        <div class="table-scroll container-table">
+          <table>
+            <thead>
+              <tr>
+                <th>櫃型</th>
+                <th>櫃數</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="container-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="row-between">
+        <div class="dim-head">
+          <h3>尺寸</h3>
+          <div class="unit-switch" role="group" aria-label="尺寸單位">
+            <button type="button" id="dim-unit-cm" data-dim-unit="cm" aria-pressed="true">公分 cm</button>
+            <button type="button" id="dim-unit-inch" data-dim-unit="inch" aria-pressed="false">英吋 inch</button>
+          </div>
+        </div>
+        <button type="button" class="btn" id="add-dim">＋ 新增一列</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>長</th>
+              <th>寬</th>
+              <th>高</th>
+              <th>件數</th>
+              <th>CBM</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dim-body"></tbody>
+        </table>
+      </div>
+
+      <dl class="metrics">
+        <div><dt>合計 CBM</dt><dd id="m-cbm">—</dd></div>
+        <div><dt>才</dt><dd id="m-cai">—</dd></div>
+        <div><dt>材積重（公斤）</dt><dd id="m-vol">—</dd></div>
+        <div><dt>計費重量（公斤）</dt><dd id="m-chg">—</dd></div>
+      </dl>
+      <p id="metric-note" class="hint"></p>
+
+      <details class="fold" open>
+        <summary>計算設定（存在這台瀏覽器）</summary>
+        <div class="cargo-grid">
+          <label>空運每 CBM 公斤數
+            <input id="set-air" data-setting="airKgPerCbm" type="number" step="any" min="0">
+          </label>
+          <label>海運每 CBM 公斤數
+            <input id="set-sea" data-setting="seaKgPerCbm" type="number" step="any" min="0">
+          </label>
+          <label>快遞材積除數
+            <input id="set-express" data-setting="expressDivisor" type="number" step="any" min="0">
+            <span class="hint">長 × 寬 × 高 × 件數 ÷ 除數</span>
+          </label>
+          <label>才換算倍率
+            <input id="set-cai" data-setting="caiFactor" type="number" step="any" min="0">
+            <span class="hint">才 = CBM × 倍率</span>
+          </label>
+        </div>
+        <button type="button" class="btn ghost" id="reset-settings">恢復預設</button>
+      </details>
+      <div class="panel-foot">
+        <button type="button" class="btn" data-step-next="price">下一步：成本與報價</button>
+      </div>
+    </section>
+
+    <section id="panel-price" class="panel" hidden>
+      <div class="panel-head">
+        <h2>成本與報價</h2>
+        <p>這一頁看得到成本與毛利，不會印在報價單上。不同幣別分開加總，不自動換匯。</p>
+      </div>
+      <div class="markup-bar">
+        <label>整體加成 %
+          <input id="markup-percent" type="number" step="any" inputmode="decimal">
+        </label>
+        <button type="button" class="btn" id="apply-markup">套用到全部報價單價</button>
+        <button type="button" class="btn ghost" id="recalc-qty">依貨物重算數量</button>
+      </div>
+        <p class="hint">報價單價預設等於成本單價。手動改過的數量，要按「依貨物重算數量」才會再跟著貨物走。每票和 Per Set 固定為 1。海運整櫃時，有指定櫃型的每櫃項目用該櫃型櫃數，沒指定的用總櫃數。其他運輸方式的每櫃仍用櫃數。勾選「不顯示」的項目不會出現在報價單。</p>
+      <p id="price-empty" class="empty">尚未有成本項目。</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>項目名稱</th>
+              <th>計價單位</th>
+              <th>數量</th>
+              <th>成本單價</th>
+              <th>最低收費</th>
+              <th>成本小計</th>
+              <th>報價單價</th>
+              <th>報價小計</th>
+              <th>幣別</th>
+              <th>備註</th>
+              <th>不顯示</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="price-body"></tbody>
+        </table>
+      </div>
+      <div class="row-between">
+        <h3>依幣別合計</h3>
+        <button type="button" class="btn" id="add-item-price">＋ 新增一列</button>
+      </div>
+      <div id="totals" class="totals"></div>
+      <div class="panel-foot">
+        <button type="button" class="btn" data-step-next="quote">下一步：報價單</button>
+      </div>
+    </section>
+
+    <section id="panel-quote" class="panel" hidden>
+      <div class="quote-tools no-print">
+        <div class="panel-head">
+          <h2>報價單</h2>
+          <p>下面這張單只列出報價。列印時可在對話框選「另存為 PDF」。</p>
+        </div>
+        <div class="cargo-grid">
+          <label>客戶名稱
+            <input id="customer-name" autocomplete="organization">
+          </label>
+          <label class="span-2">航線
+            <input id="route" autocomplete="off">
+          </label>
+          <label>報價日期
+            <input id="quote-date" type="date">
+          </label>
+          <label>有效期限
+            <input id="valid-until" type="date">
+          </label>
+          <label>報價單號
+            <input id="quote-number" autocomplete="off">
+          </label>
+          <label class="span-2">備註
+            <textarea id="remarks" rows="3"></textarea>
+          </label>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="save-quote">儲存這筆報價</button>
+          <button type="button" class="btn" id="print-quote">列印 / 存成 PDF</button>
+          <button type="button" class="btn ghost" id="export-quote">匯出 Excel</button>
+        </div>
+      </div>
+
+      <article id="quote-sheet">
+        <div id="quote-body"></div>
+        <footer class="q-foot">
+          <label class="check no-print">
+            <input id="show-twd" type="checkbox">
+            顯示約當台幣合計
+          </label>
+          <div id="twd-editor" class="no-print" hidden></div>
+          <div id="twd-print"></div>
+        </footer>
+        <p id="quote-remarks" class="q-remarks" hidden></p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="legal no-print">資料只存在這台瀏覽器，不會上傳。</footer>
+
+  <dialog id="history-dialog" class="no-print">
+    <div class="row-between">
+      <h2>歷史報價</h2>
+      <button type="button" class="btn ghost" id="history-close">關閉</button>
+    </div>
+    <div class="history-tools">
+      <button type="button" class="btn ghost" id="backup-export">匯出備份</button>
+      <button type="button" class="btn ghost" id="backup-import">匯入備份</button>
+      <input id="backup-file" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p id="backup-msg" class="hint" hidden></p>
+    <div id="backup-import-panel" hidden>
+      <p id="backup-import-count"></p>
+      <label class="check">
+        <input type="radio" name="backup-mode" value="merge" checked>
+        合併（同報價單號以較新的為準）
+      </label>
+      <label class="check">
+        <input type="radio" name="backup-mode" value="replace">
+        全部取代
+      </label>
+      <p class="hint">合併只合併歷史報價，草稿和設定維持現況。全部取代會換掉歷史報價、目前草稿、計算設定、預設幣別和單位偏好，並先下載目前資料。檔案只在這台電腦處理，不會上傳。</p>
+      <div class="row-actions">
+        <button type="button" class="btn" id="backup-import-confirm">確認</button>
+        <button type="button" class="btn ghost" id="backup-import-cancel">取消</button>
+      </div>
+    </div>
+    <input id="history-q" type="search" placeholder="搜尋單號、客戶或日期">
+    <div id="history-list"></div>
+  </dialog>
+
+  <datalist id="currency-list">
+    <option value="USD"></option>
+    <option value="TWD"></option>
+    <option value="CNY"></option>
+    <option value="EUR"></option>
+    <option value="JPY"></option>
+    <option value="HKD"></option>
+    <option value="GBP"></option>
+    <option value="SGD"></option>
+    <option value="KRW"></option>
+    <option value="AUD"></option>
+  </datalist>
+
+  <noscript><p class="status">此系統需要 JavaScript。資料只會留在這台電腦的瀏覽器裡。</p></noscript>
+  <script src="libs/mammoth.browser.min.js"></script>
+  <script src="libs/xlsx.full.min.js"></script>
+  <script src="libs/pdf.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/parse.js"></script>
+  <script src="js/import-word.js"></script>
+  <script src="js/import-excel.js"></script>
+  <script src="js/import-pdf.js"></script>
+  <script src="js/cargo.js"></script>
+  <script src="js/pricing.js"></script>
+  <script src="js/quote-doc.js"></script>
+  <script src="js/history.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+name = "quote-auth"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+# QUOTE_PASS 與 TOKEN_SECRET 只能用 Cloudflare Secrets，不可寫進這個檔案或 [vars]。
+# 部署前在本機執行（不要把值寫進任何檔案再提交）：
+#   npx wrangler secret put QUOTE_PASS
+#   npx wrangler secret put TOKEN_SECRET
+# 本機 wrangler dev 可用 worker/.dev.vars，該檔已由 .gitignore 排除。

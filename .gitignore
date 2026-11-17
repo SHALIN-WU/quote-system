@@ -1,0 +1,14 @@
+data/
+samples/
+.dev.vars
+.wrangler/
+worker/node_modules/
+.env
+*.docx
+*.xlsx
+*.xls
+*.csv
+*.pdf
+~$*
+quote-backup-*.json
+tests/
