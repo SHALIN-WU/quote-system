@@ -7,6 +7,7 @@
       { id: "kg", label: "Per KG" },
       { id: "lb", label: "Per LB" },
       { id: "cbm", label: "Per CBM" },
+      { id: "wm", label: "W/M" },
       { id: "piece", label: "Per PKG" },
       { id: "shipment", label: "Per Shipment" },
       { id: "set", label: "Per Set" },
@@ -64,6 +65,13 @@
     return Number(value).toLocaleString("zh-TW", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
+    });
+  };
+
+  NG.formatInteger = function (value) {
+    if (value == null || !isFinite(Number(value))) return "—";
+    return Math.round(Number(value)).toLocaleString("zh-TW", {
+      maximumFractionDigits: 0,
     });
   };
 

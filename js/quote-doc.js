@@ -120,16 +120,25 @@
     model.groups.forEach(function (group) {
       rows.push([group.currency, Math.round(group.quote * 100) / 100]);
     });
+    const twdRows = [];
     if (model.showTwd) {
       rows.push([]);
       rows.push(["約當台幣合計（手動匯率，僅供參考）"]);
       model.twd.lines.forEach(function (line) {
         if (line.rate == null) rows.push([line.currency, "尚未填匯率"]);
-        else rows.push(["1 " + line.currency + " = " + line.rate + " TWD", Math.round(line.twd * 100) / 100]);
+        else {
+          rows.push(["1 " + line.currency + " = " + line.rate + " TWD", Math.round(line.twd)]);
+          twdRows.push(rows.length - 1);
+        }
       });
-      rows.push([model.twd.missing ? "約當台幣合計" : "約當台幣合計", model.twd.missing ? "匯率未填完" : Math.round(model.twd.sum * 100) / 100]);
+      rows.push([model.twd.missing ? "約當台幣合計" : "約當台幣合計", model.twd.missing ? "匯率未填完" : model.twd.sum]);
+      if (!model.twd.missing) twdRows.push(rows.length - 1);
     }
     const sheet = window.XLSX.utils.aoa_to_sheet(rows);
+    twdRows.forEach(function (index) {
+      const cell = sheet[window.XLSX.utils.encode_cell({ r: index, c: 1 })];
+      if (cell && typeof cell.v === "number") cell.z = "#,##0";
+    });
     sheet["!cols"] = [{ wch: 28 }, { wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }];
     const book = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(book, sheet, "報價單");

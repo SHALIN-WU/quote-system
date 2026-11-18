@@ -973,8 +973,8 @@
     model.twd.lines.forEach(function (line) {
       const item = document.createElement("li");
       if (line.rate == null) item.textContent = line.currency + " " + NG.formatMoney(line.quote) + "：尚未填匯率";
-      else if (line.currency === "TWD") item.textContent = "TWD " + NG.formatMoney(line.quote) + " × 1 = " + NG.formatMoney(line.twd);
-      else item.textContent = line.currency + " " + NG.formatMoney(line.quote) + " × " + line.rate + " = " + NG.formatMoney(line.twd);
+      else if (line.currency === "TWD") item.textContent = "TWD " + NG.formatMoney(line.quote) + " × 1 = " + NG.formatInteger(line.twd);
+      else item.textContent = line.currency + " " + NG.formatMoney(line.quote) + " × " + line.rate + " = " + NG.formatInteger(line.twd);
       list.appendChild(item);
     });
     host.appendChild(list);
@@ -982,7 +982,7 @@
     sum.className = "twd-sum";
     sum.textContent = model.twd.missing
       ? "尚有幣別未填匯率或未指定幣別，無法計算約當台幣合計。"
-      : "約當台幣合計　TWD " + NG.formatMoney(model.twd.sum);
+      : "約當台幣合計　TWD " + NG.formatInteger(model.twd.sum);
     host.appendChild(sum);
   }
 
@@ -1342,10 +1342,15 @@
     const applied = [];
     const weightHit = cargo.weight || cargo.chargeableWeight;
     if (weightHit && fieldEmpty(state.cargo.grossWeightKg)) {
-      const target = state.cargo.weightUnit === "lb" ? "lb" : "kg";
-      state.cargo.grossWeightKg = weightHit.unit === target
-        ? String(weightHit.value)
-        : NG.cargo.convertWeight(weightHit.value, weightHit.unit, target);
+      if (weightHit.unit === "lb") {
+        state.cargo.weightUnit = "lb";
+        state.cargo.grossWeightKg = String(weightHit.value);
+      } else {
+        const target = state.cargo.weightUnit === "lb" ? "lb" : "kg";
+        state.cargo.grossWeightKg = weightHit.unit === target
+          ? String(weightHit.value)
+          : NG.cargo.convertWeight(weightHit.value, weightHit.unit, target);
+      }
       applied.push("毛重");
     }
     if (!fieldEmpty(cargo.pieces) && fieldEmpty(state.cargo.pieces)) {
@@ -1354,13 +1359,15 @@
     }
     const incomingDims = Array.isArray(cargo.dimensions) ? cargo.dimensions : [];
     if (incomingDims.length && !dimsHaveSize(state.cargo)) {
+      if (incomingDims.every(function (dim) { return dim.unit === "inch"; })) state.cargo.dimUnit = "inch";
       const target = state.cargo.dimUnit === "inch" ? "inch" : "cm";
       state.cargo.dimensions = incomingDims.map(function (dim) {
+        const keep = dim.unit === "inch" && target === "inch";
         return {
           id: NG.uid(),
-          l: convertDim(dim.l, dim.unit, target),
-          w: convertDim(dim.w, dim.unit, target),
-          h: convertDim(dim.h, dim.unit, target),
+          l: keep ? String(dim.l == null ? "" : dim.l) : convertDim(dim.l, dim.unit, target),
+          w: keep ? String(dim.w == null ? "" : dim.w) : convertDim(dim.w, dim.unit, target),
+          h: keep ? String(dim.h == null ? "" : dim.h) : convertDim(dim.h, dim.unit, target),
           pieces: dim.pieces == null ? "" : String(dim.pieces),
         };
       });
@@ -1390,9 +1397,17 @@
         applied.push("備註");
       }
     }
+    if (cargo.mode && ["air", "lcl", "fcl", "express"].indexOf(cargo.mode) >= 0 && state.cargo.mode !== cargo.mode) {
+      state.cargo.mode = cargo.mode;
+      const ship = $("ship-mode");
+      if (ship) ship.value = state.cargo.mode;
+      paintMode();
+      applied.push("運輸方式");
+    }
     $("gross-weight").value = state.cargo.grossWeightKg;
     $("total-pieces").value = state.cargo.pieces;
     paintWeightUnit();
+    paintDimUnit();
     fillQuoteForm();
     renderMetrics();
     return applied;

@@ -66,7 +66,7 @@
       sum += twd;
       lines.push({ currency: group.currency, quote: group.quote, rate: rate, twd: twd });
     });
-    return { lines: lines, missing: missing, sum: missing ? null : sum };
+    return { lines: lines, missing: missing, sum: missing ? null : Math.round(sum) };
   }
 
   NG.pricing = {

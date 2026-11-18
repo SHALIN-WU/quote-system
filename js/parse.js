@@ -16,6 +16,7 @@
     { id: "kg", re: /每\s*公斤|每\s*kgs?|\/\s*kgs?\b|per\s*kgs?\b|\/\s*k(?![A-Za-z])|per\s+k(?![A-Za-z])|\bkgs?\b|公斤/i },
     { id: "lb", re: /每\s*英磅|\/\s*lbs?\b|per\s*lbs?\b/i },
     { id: "cbm", re: /每\s*(?:cbm|m³|m3|立方米)|\/\s*(?:cbm|m³|m3)\b|per\s*(?:cbm|m3)\b|\bcbm\b|\bm³\b|\bm3\b|立方米/i },
+    { id: "wm", re: /(?<![A-Za-z])(?:per\s+)?w\s*\/\s*m(?![A-Za-z])/i },
     { id: "piece", re: /每\s*件|\/\s*件|per\s*(?:piece|pcs?|pkgs?|ctns?)\b|\/\s*(?:pcs?|pkgs?|ctns?)\b|\b(?:pcs?|pkgs?|ctns?)\b/i },
     { id: "set", re: /(?:\/|／|per\s+)sets?\b/i },
     { id: "shipment", re: /每\s*票|\/\s*票|每票|per\s*(?:shipment|shpt|b\/l|bl|hawb|awb|trip)\b|\/\s*(?:shipment|shpt|bl|hawb|awb|trip)\b|\b(?:shipment|shpt)\b|\bb\/l\b/i },
@@ -292,6 +293,7 @@
     const bare = /^(20|40)(?!\d)(?!\s*(?:GP|HQ|HC|RF|OT|FR|ft|呎|尺|英尺)|[A-Za-z])/i.exec(slice);
     if (bare) consider({ id: "container", containerType: bare[1] + "GP", raw: bare[0] });
     [
+      { id: "wm", re: /^w\s*\/\s*m(?![A-Za-z])/i },
       { id: "kg", re: /^(?:kgs?|k|公斤)(?![A-Za-z0-9])/i },
       { id: "lb", re: /^(?:lbs?)(?![A-Za-z])/i },
       { id: "cbm", re: /^(?:cbm|m³|m3|立方米)(?![A-Za-z0-9])/i },
@@ -308,7 +310,10 @@
   }
 
   function bareUnitAt(text, index) {
-    const match = /^(kgs?|cbm|m³|m3|pkgs?|shpt|b\/l|bl)(?![A-Za-z0-9])/i.exec(String(text || "").slice(index));
+    const slice = String(text || "").slice(index);
+    const wm = /^w\s*\/\s*m(?![A-Za-z])/i.exec(slice);
+    if (wm) return { id: "wm", raw: wm[0], containerType: "" };
+    const match = /^(kgs?|cbm|m³|m3|pkgs?|shpt|b\/l|bl)(?![A-Za-z0-9])/i.exec(slice);
     if (!match) return null;
     const token = match[1].toLowerCase();
     let id = "shipment";
@@ -331,9 +336,9 @@
     while ((match = re.exec(text))) {
       const bare = !/[\/／]/i.test(match[2]) && !/per/i.test(match[2]);
       const unitIndex = match.index + match[0].length;
-      if (bare && !currencyImmediatelyBefore(text, match.index)) continue;
       const unit = bare ? bareUnitAt(text, unitIndex) : unitAfterSlash(text, unitIndex);
       if (!unit) continue;
+      if (bare && unit.id !== "wm" && !currencyImmediatelyBefore(text, match.index)) continue;
       const end = unitIndex + unit.raw.length;
       if (re.lastIndex < end) re.lastIndex = end;
       const amount = numericValue(match[1]);
@@ -463,6 +468,18 @@
     rest = rest.replace(/\(([^)]*)\)|（([^）]*)）/g, function (_, inner, full) {
       const text = String(inner != null ? inner : full).trim();
       if (!text) return " ";
+      const money = "(?:US\\s*\\$|NT\\s*\\$|USD|TWD|EUR|GBP|CNY|JPY|HKD|SGD|KRW|AUD|RMB|NTD|台幣|臺幣)?\\s*";
+      const amount = "(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)";
+      const minHit = new RegExp("(?:min(?:imum)?|最低(?:收費)?)\\s*[:：]?\\s*" + money + amount, "i").exec(text);
+      const maxHit = new RegExp("(?:max(?:imum)?|最高(?:收費)?)\\s*[:：]?\\s*" + money + amount, "i").exec(text);
+      if (minHit || maxHit) {
+        if (minHit) {
+          const n = numericValue(minHit[1]);
+          if (n != null) minCharge = n;
+        }
+        if (maxHit) notes.push("Max: " + maxHit[1]);
+        return " ";
+      }
       if (/min(?:imum)?|最低/i.test(text)) {
         const nums = findNumbers(text);
         if (nums.length) minCharge = nums[nums.length - 1].value;
@@ -510,7 +527,8 @@
     const nums = findNumbers(rest);
     if (!nums.length) return null;
     const currencyHit = findCurrency(rest);
-    return [finish(chooseNumber(nums, null, currencyHit).value, "shipment", "", currencyHit ? currencyHit.code : "")];
+    const wm = /(?<![A-Za-z])w\s*\/\s*m(?![A-Za-z])/i.test(rest);
+    return [finish(chooseNumber(nums, null, currencyHit).value, wm ? "wm" : "shipment", "", currencyHit ? currencyHit.code : "")];
   }
 
   function findAllCurrencies(text) {
@@ -1214,12 +1232,12 @@
 
   function scanLine(line) {
     const dims = [];
-    const masked = String(line).replace(/(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)(?:\s*[（(]\s*(cm|mm|inch|in|英吋|公分)\s*[)）]|\s*(cm|mm|inch|in|英吋|公分)\b)?/gi, function (all, l, w, h, parenUnit, bareUnit) {
+    const masked = String(line).replace(/(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)(?:\s*[（(]\s*(cm|mm|inch|in|英吋|公分)\s*[)）]|\s*(cm|mm|inch|in|英吋|公分)\b|\s*("|″|''|”))?/gi, function (all, l, w, h, parenUnit, bareUnit, inchMark) {
       dims.push({
         l: plainNum(l),
         w: plainNum(w),
         h: plainNum(h),
-        unit: normalizeDimUnit(parenUnit || bareUnit || "cm"),
+        unit: normalizeDimUnit(parenUnit || bareUnit || (inchMark ? "inch" : "cm")),
         pieces: "",
       });
       return " ".repeat(all.length);
@@ -1276,6 +1294,82 @@
     if (isStrictFee(line)) return false;
     const scanned = scanLine(line);
     return scanned.weights.length > 0 || scanned.volumes.length > 0 || scanned.pieces.length > 0 || scanned.dims.length > 0 || scanned.bareSize;
+  }
+
+  function measureWeightUnit(token) {
+    return /lbs?|磅/i.test(token) ? "lb" : "kg";
+  }
+
+  function roundMeasure(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 1000) / 1000;
+  }
+
+  function parseMeasureLine(line) {
+    const text = String(line || "");
+    if (lineHasCurrency(text) || isStrictFee(text)) return null;
+    const qtyMatch = /^\s*(\d+(?:\.\d+)?)\s*(?:pallets?|plts?|pkgs?|packages?|cartons?|ctns?|pcs?|pieces?|件)\b/i.exec(text);
+    const eachMatch = /(\d+(?:\.\d+)?)\s*(lbs?|kgs?|磅|公斤)\s*each\b/i.exec(text);
+    const totalMatch = /(\d+(?:\.\d+)?)\s*(lbs?|kgs?|磅|公斤)\s*total\b/i.exec(text);
+    const dimMatch = /(?:\bdims?\b|\bdimensions?\b)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)(\s*(?:"|″|''|”|\u2033|\u201d)|\s*(?:in(?:ch(?:es)?)?|英吋)\b|\s*(?:cm|公分)\b|\s*mm\b)?/i.exec(text);
+    const suffix = dimMatch ? String(dimMatch[4] || "") : "";
+    const inchDim = !!(dimMatch && /["″”\u2033\u201d]|in(?:ch)?|英吋/i.test(suffix));
+    const poundEach = !!((eachMatch && /lbs?|磅/i.test(eachMatch[2])) || (totalMatch && /lbs?|磅/i.test(totalMatch[2])));
+    if (!inchDim && !poundEach) return null;
+    let weight = null;
+    if (totalMatch) {
+      const value = numericValue(totalMatch[1]);
+      if (value != null) weight = { value: value, unit: measureWeightUnit(totalMatch[2]) };
+    } else if (eachMatch && qtyMatch) {
+      const each = numericValue(eachMatch[1]);
+      const qty = numericValue(qtyMatch[1]);
+      if (each != null && qty != null) weight = { value: each * qty, unit: measureWeightUnit(eachMatch[2]) };
+    } else if (eachMatch) {
+      const value = numericValue(eachMatch[1]);
+      if (value != null) weight = { value: value, unit: measureWeightUnit(eachMatch[2]) };
+    }
+    let unit = "cm";
+    if (/["″”\u2033\u201d]|in(?:ch)?|英吋/i.test(suffix)) unit = "inch";
+    else if (/mm/i.test(suffix)) unit = "mm";
+    const dim = dimMatch ? {
+      l: plainNum(dimMatch[1]),
+      w: plainNum(dimMatch[2]),
+      h: plainNum(dimMatch[3]),
+      unit: unit,
+      pieces: qtyMatch ? plainNum(qtyMatch[1]) : "",
+    } : null;
+    return {
+      weight: weight,
+      dim: dim,
+      pieces: !dim && qtyMatch ? numericValue(qtyMatch[1]) : null,
+    };
+  }
+
+  function mergeMeasure(cargo, measure) {
+    if (!measure) return;
+    if (measure.weight && isFinite(Number(measure.weight.value))) {
+      if (!cargo.weightParts) cargo.weightParts = [];
+      cargo.weightParts.push(measure.weight);
+    }
+    if (measure.dim) cargo.dimensions.push(measure.dim);
+    if (measure.pieces != null && !measure.dim) setPieces(cargo, measure.pieces, false);
+  }
+
+  function finishMeasureWeights(cargo) {
+    const parts = cargo.weightParts || [];
+    delete cargo.weightParts;
+    if (!parts.length || cargo.weight) return;
+    const unit = parts[0].unit === "lb" ? "lb" : "kg";
+    const same = parts.every(function (part) { return (part.unit === "lb" ? "lb" : "kg") === unit; });
+    if (same) {
+      const sum = parts.reduce(function (total, part) { return total + Number(part.value); }, 0);
+      cargo.weight = { value: roundMeasure(sum), unit: unit };
+      return;
+    }
+    const kg = parts.reduce(function (total, part) {
+      const n = Number(part.value);
+      return total + (part.unit === "lb" ? n * 0.453592 : n);
+    }, 0);
+    cargo.weight = { value: roundMeasure(kg), unit: "kg" };
   }
 
   function setWeight(cargo, hit) {
@@ -1384,6 +1478,7 @@
     if (rate.unit === "kg") return "kg";
     if (rate.unit === "lb") return "lb";
     if (rate.unit === "cbm") return "cbm";
+    if (rate.unit === "wm") return "w/m";
     if (rate.unit === "piece") return "pkg";
     if (rate.unit === "shipment") return "shpt";
     if (rate.unit === "container") return rate.containerType || "";
@@ -1576,6 +1671,12 @@
         skipped.push(original);
         return;
       }
+      const measure = parseMeasureLine(original);
+      if (measure) {
+        if (!feesOnly) mergeMeasure(cargo, measure);
+        skipped.push(original);
+        return;
+      }
       if (/^sub\s*total\b/i.test(original)) return;
       if (tableSlots && isStrictFee(original)) {
         const rewritten = rewriteTableRow(original, tableSlots);
@@ -1598,6 +1699,8 @@
       }
       if (!acceptFeeLine(original, feesOnly, items)) skipped.push(original);
     });
+    finishMeasureWeights(cargo);
+    if (!feesOnly && items.some(function (item) { return item.unit === "wm"; })) cargo.mode = "lcl";
     if ((cargo.pieces === "" || cargo.pieces == null) && cargo.dimensions.length) {
       const summed = cargo.dimensions.reduce(function (sum, dim) {
         return sum + (dim.pieces === "" || dim.pieces == null ? 0 : Number(dim.pieces));

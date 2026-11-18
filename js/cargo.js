@@ -206,6 +206,7 @@
       return round(grossLb(cargo), 3);
     }
     if (unit === "cbm") return summary.cbm;
+    if (unit === "wm") return round(Math.max(summary.cbm, summary.gross / 1000), 3);
     if (unit === "piece") return summary.pieces;
     return "";
   }
