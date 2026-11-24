@@ -19,6 +19,7 @@
     { id: "wm", re: /(?<![A-Za-z])(?:per\s+)?w\s*\/\s*m(?![A-Za-z])/i },
     { id: "piece", re: /每\s*件|\/\s*件|per\s*(?:piece|pcs?|pkgs?|ctns?)\b|\/\s*(?:pcs?|pkgs?|ctns?)\b|\b(?:pcs?|pkgs?|ctns?)\b/i },
     { id: "set", re: /(?:\/|／|per\s+)sets?\b/i },
+    { id: "plt", re: /(?:\/|／|per\s+)(?:plts?|pallets?)\b/i },
     { id: "shipment", re: /每\s*票|\/\s*票|每票|per\s*(?:shipment|shpt|b\/l|bl|hawb|awb|trip)\b|\/\s*(?:shipment|shpt|bl|hawb|awb|trip)\b|\b(?:shipment|shpt)\b|\bb\/l\b/i },
     { id: "container", re: /每\s*[櫃柜]|\/\s*[櫃柜]|per\s*(?:container|cntr)\b|\bcntr\b|\bcontainer\b/i },
   ];
@@ -299,6 +300,7 @@
       { id: "cbm", re: /^(?:cbm|m³|m3|立方米)(?![A-Za-z0-9])/i },
       { id: "piece", re: /^(?:pcs?|piece|pkgs?|ctns?|件)(?![A-Za-z])/i },
       { id: "set", re: /^(?:sets?)(?![A-Za-z0-9])/i },
+      { id: "plt", re: /^(?:plts?|pallets?)(?![A-Za-z0-9])/i },
       { id: "shipment", re: /^(?:hawb|awb|shipment|shpt|trip|b\/l|bl|票)(?![A-Za-z0-9])/i },
       { id: "shipment", re: /^(?:h|m)(?![A-Za-z0-9])/i, loose: true },
       { id: "container", re: /^(?:container|cntr|[櫃柜])(?![A-Za-z])/i },
@@ -979,7 +981,96 @@
     return items;
   }
 
+  function coverSpans(text, spans) {
+    const chars = String(text || "").split("");
+    spans.forEach(function (span) {
+      for (let i = span.start; i < span.end && i < chars.length; i += 1) chars[i] = " ";
+    });
+    return chars.join("");
+  }
+
+  function weightBreakNote(label) {
+    const compact = String(label || "").replace(/\s+/g, "").toUpperCase().replace(/KGS$/, "KG");
+    return "級距 " + compact;
+  }
+
+  function parseWeightBreakLine(original) {
+    const text = String(original || "");
+    const re = /([+\uFF0B]\s*\d+(?:\.\d+)?\s*KGS?)\s*(?:\/|／)\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?!\s*KGS?\b)/gi;
+    const hits = [];
+    let match;
+    while ((match = re.exec(text))) {
+      const amount = numericValue(match[2]);
+      if (amount == null) {
+        continue;
+      }
+      let end = match.index + match[0].length;
+      let unitId = "";
+      let containerType = "";
+      const tail = text.slice(end);
+      const slash = /^\s*(?:\/|／)\s*/.exec(tail);
+      if (slash) {
+        const unit = unitAfterSlash(tail, slash[0].length);
+        if (unit && !unit.loose) {
+          unitId = unit.id;
+          containerType = unit.containerType || "";
+          end += slash[0].length + unit.raw.length;
+        }
+      }
+      hits.push({
+        label: match[1],
+        amount: amount,
+        start: match.index,
+        end: end,
+        unit: unitId,
+        containerType: containerType,
+        currency: currencyImmediatelyBefore(text, match.index + match[0].lastIndexOf(match[2])) || null,
+      });
+      re.lastIndex = end;
+    }
+    if (hits.length < 2) return null;
+    const uncovered = coverSpans(text, hits);
+    if (findNumbers(uncovered).length) return null;
+    let head = text.slice(0, hits[0].start);
+    const headCurrency = findCurrency(head);
+    if (headCurrency) {
+      head = head.slice(0, headCurrency.index) + " " + head.slice(headCurrency.index + headCurrency.raw.length);
+    }
+    const name = tidyFeeName(cleanLead(head));
+    if (!name || badName(name)) return null;
+    let shared = "";
+    hits.forEach(function (hit) {
+      if (hit.unit) shared = hit.unit;
+    });
+    if (!shared) {
+      const slash = /(?:\/|／)\s*/.exec(uncovered);
+      if (slash) {
+        const unit = unitAfterSlash(uncovered, slash.index + slash[0].length);
+        if (unit && !unit.loose) shared = unit.id;
+      }
+    }
+    if (!shared) shared = "kg";
+    let carried = headCurrency ? headCurrency.code : "";
+    return hits.map(function (hit) {
+      if (hit.currency && hit.currency.code) carried = hit.currency.code;
+      const unit = hit.unit || shared;
+      return {
+        name: name,
+        costPrice: hit.amount,
+        quotePrice: hit.amount,
+        unit: unit,
+        containerType: unit === "container" ? (hit.containerType || "") : "",
+        currency: carried,
+        minCharge: "",
+        note: weightBreakNote(hit.label),
+        looseUnit: "",
+      };
+    });
+  }
+
   function parseCore(original) {
+    const breaks = parseWeightBreakLine(original);
+    if (breaks) return breaks;
     const tiers = parseWeightTierLine(original);
     if (tiers) return tiers;
     const leading = parseLeadingMinRate(original);
@@ -1480,6 +1571,8 @@
     if (rate.unit === "cbm") return "cbm";
     if (rate.unit === "wm") return "w/m";
     if (rate.unit === "piece") return "pkg";
+    if (rate.unit === "set") return "set";
+    if (rate.unit === "plt") return "plt";
     if (rate.unit === "shipment") return "shpt";
     if (rate.unit === "container") return rate.containerType || "";
     return "";

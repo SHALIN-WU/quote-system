@@ -30,6 +30,7 @@
       return true;
     }).map(function (row) {
       if (row[0] === "計費重量（公斤）") {
+        if (model.mode === "air") return [row[0], NG.formatFixed(row[1], 1)];
         return [row[0], NG.formatMeasure(row[1], 3)];
       }
       return row;
@@ -51,11 +52,15 @@
   }
 
   function renderBody(model) {
+    function qtyText(line) {
+      if (model.mode === "air" && line.unit === "Per KG") return NG.formatFixed(line.qty, 1);
+      return NG.formatQty(line.qty);
+    }
     const lines = model.lines.map(function (line) {
       return "<tr><td>" + NG.esc(line.name) + "</td><td>" + NG.esc(line.unit) +
         (line.minCharge ? " <span class=\"q-min\">MIN " + NG.esc(NG.formatMoney(line.minCharge)) + "</span>" : "") +
-        "</td><td class=\"num\">" + NG.esc(NG.formatQty(line.qty)) +
-        "</td><td class=\"num\">" + NG.esc(line.price == null ? "—" : NG.formatMeasure(line.price, 4)) +
+        "</td><td class=\"num\">" + NG.esc(qtyText(line)) +
+        "</td><td class=\"num\">" + NG.esc(line.price == null ? "—" : NG.formatMoney(line.price)) +
         "</td><td>" + NG.esc(line.currency) +
         "</td><td class=\"num\">" + NG.esc(NG.formatMoney(line.subtotal)) + "</td></tr>";
     }).join("");
@@ -91,6 +96,12 @@
     return value;
   }
 
+  function rememberMoney(marks, rowIndex, values, columns) {
+    columns.forEach(function (column) {
+      if (typeof values[column] === "number") marks.push({ r: rowIndex, c: column });
+    });
+  }
+
   function exportXlsx(model) {
     if (!window.XLSX) throw new Error("SheetJS 沒有載入");
     const rows = [
@@ -102,23 +113,37 @@
       ["有效期限", model.validUntil || ""],
       ["備註", cell(model.remarks || "")],
     ];
-    cargoRows(model).forEach(function (row) { rows.push(row); });
+    const moneyCells = [];
+    const measureCells = [];
+    cargoRows(model).forEach(function (row) {
+      if (model.mode === "air" && row[0] === "計費重量（公斤）" && typeof row[1] === "number") {
+        measureCells.push({ r: rows.length, c: 1 });
+      }
+      rows.push(row);
+    });
     rows.push([]);
     rows.push(["項目", "計價單位", "數量", "報價單價", "幣別", "報價小計"]);
     model.lines.forEach(function (line) {
-      rows.push([
+      const values = [
         cell(line.name),
         line.minCharge ? line.unit + " (MIN " + NG.formatMoney(line.minCharge) + ")" : line.unit,
         line.qty == null ? "" : line.qty,
         line.price == null ? "" : line.price,
         line.currency,
-        line.subtotal == null ? "" : Math.round(line.subtotal * 100) / 100,
-      ]);
+        line.subtotal == null ? "" : line.subtotal,
+      ];
+      rememberMoney(moneyCells, rows.length, values, [3, 5]);
+      if (model.mode === "air" && line.unit === "Per KG" && typeof values[2] === "number") {
+        measureCells.push({ r: rows.length, c: 2 });
+      }
+      rows.push(values);
     });
     rows.push([]);
     rows.push(["幣別", "報價合計"]);
     model.groups.forEach(function (group) {
-      rows.push([group.currency, Math.round(group.quote * 100) / 100]);
+      const values = [group.currency, group.quote];
+      rememberMoney(moneyCells, rows.length, values, [1]);
+      rows.push(values);
     });
     const twdRows = [];
     if (model.showTwd) {
@@ -135,6 +160,14 @@
       if (!model.twd.missing) twdRows.push(rows.length - 1);
     }
     const sheet = window.XLSX.utils.aoa_to_sheet(rows);
+    moneyCells.forEach(function (pos) {
+      const money = sheet[window.XLSX.utils.encode_cell(pos)];
+      if (money && typeof money.v === "number") money.z = "#,##0.00";
+    });
+    measureCells.forEach(function (pos) {
+      const measure = sheet[window.XLSX.utils.encode_cell(pos)];
+      if (measure && typeof measure.v === "number") measure.z = "#,##0.0";
+    });
     twdRows.forEach(function (index) {
       const cell = sheet[window.XLSX.utils.encode_cell({ r: index, c: 1 })];
       if (cell && typeof cell.v === "number") cell.z = "#,##0";

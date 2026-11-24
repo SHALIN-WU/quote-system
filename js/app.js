@@ -207,14 +207,41 @@
     return item;
   }
 
+  function isMoneyField(field) {
+    return field === "costPrice" || field === "minCharge" || field === "quotePrice";
+  }
+
+  function moneyInputValue(value) {
+    if (value === "" || value == null || String(value).trim() === "") return "";
+    const n = Number(String(value).replace(/,/g, ""));
+    if (!isFinite(n)) return String(value);
+    return n.toFixed(2);
+  }
+
+  function shownQty(item) {
+    if (!item || item.qty === "" || item.qty == null) return "";
+    if (state.cargo.mode === "air" && item.unit === "kg") {
+      const n = NG.num(item.qty);
+      if (isFinite(n)) return n.toFixed(1);
+    }
+    return item.qty;
+  }
+
   function numInput(field, value, label) {
     const input = document.createElement("input");
+    const money = isMoneyField(field);
     input.type = "number";
     input.step = "any";
     input.dataset.field = field;
-    input.value = value == null ? "" : value;
+    input.value = money ? moneyInputValue(value) : (value == null ? "" : value);
     input.setAttribute("aria-label", label);
     input.inputMode = "decimal";
+    if (money) {
+      input.addEventListener("blur", function () {
+        const shown = moneyInputValue(input.value);
+        if (shown !== input.value) input.value = shown;
+      });
+    }
     return input;
   }
 
@@ -304,7 +331,7 @@
     const nameCell = addCell(textInput("name", item.name, "項目名稱"), "cell-name");
     nameCell.firstChild.autocomplete = "off";
     if (mode === "price") addCell(unitField(item));
-    if (mode === "price") addCell(numInput("qty", item.qty, "數量"));
+    if (mode === "price") addCell(numInput("qty", shownQty(item), "數量"));
     addCell(numInput("costPrice", item.costPrice, "成本單價"));
     if (mode === "import") addCell(unitField(item));
     addCell(numInput("minCharge", item.minCharge, "最低收費"));
@@ -569,7 +596,9 @@
     $("m-cbm").textContent = NG.formatMeasure(summary.cbm, 4);
     $("m-cai").textContent = NG.formatMeasure(summary.cai, 3);
     $("m-vol").textContent = NG.formatMeasure(summary.volumetric, 3);
-    $("m-chg").textContent = NG.formatMeasure(summary.chargeable, 3);
+    $("m-chg").textContent = summary.mode === "air"
+      ? NG.formatFixed(summary.chargeable, 1)
+      : NG.formatMeasure(summary.chargeable, 3);
     const imported = summary.cbmFromImport ? "合計 CBM 使用匯入的材積。" : "";
     $("metric-note").textContent = (summary.warning ? summary.warning + "。" : "") + imported + NG.cargo.formulaText(summary, settings);
   }
@@ -709,7 +738,7 @@
     name.autocomplete = "off";
     add(name, "cell-name");
     add(quoteUnitField(item));
-    add(numInput("qty", item.qty, "數量"));
+    add(numInput("qty", shownQty(item), "數量"));
     add(numInput("quotePrice", item.quotePrice, "報價單價"));
     add(currencyInput(item));
     const sub = document.createElement("td");
@@ -992,7 +1021,7 @@
     item.qty = qty === "" || qty == null ? "" : qty;
     if (!tr) return;
     const qtyInput = tr.querySelector('[data-field="qty"]');
-    if (qtyInput) qtyInput.value = item.qty;
+    if (qtyInput) qtyInput.value = shownQty(item);
   }
 
   function refreshDerivedRow(tr, item) {
@@ -2142,17 +2171,33 @@
   function init() {
     const libsReady = !!(window.mammoth && window.XLSX);
     settings = NG.storage.loadSettings();
-    const draft = NG.storage.loadDraft();
-    const restored = hasContent(draft);
-    state = normalizeState(restored ? draft : blankState());
+    state = normalizeState(blankState());
     fillSettings();
     fillCargoForm();
     fillQuoteForm();
     bind();
     setStep("import", true);
     renderMetrics();
+    const paste = $("paste-text");
+    if (paste) paste.value = "";
+    window.addEventListener("pageshow", function (event) {
+      if (!event.persisted) return;
+      suppressDraft = true;
+      try {
+        stopDraft();
+        excelSession = null;
+        rateSig = "";
+        airPlanState = { plans: [], appliedRoute: "" };
+        clearImportArtifacts();
+        emptyQuoteControls();
+        applyState(blankState(), { skipDraft: true });
+        setStep("import", true);
+      } finally {
+        suppressDraft = false;
+        stopDraft();
+      }
+    });
     if (!libsReady) setStatus("函式庫未載入。請用 start.ps1 開啟這個資料夾的網頁。");
-    else if (restored) setStatus("已還原上次未儲存的內容");
   }
 
   NG.startApp = function () {

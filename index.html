@@ -79,7 +79,7 @@
         <article class="card card-wide">
           <h3>貼上郵件文字</h3>
           <p>一行一個費用，盡量寫出幣別和單位，例如 <span class="sample">運費 USD 3.2/kg</span></p>
-          <textarea id="paste-text" rows="6" placeholder="運費 USD 3.2/kg&#10;燃油附加費 USD 0.8/kg&#10;報關費 TWD 1,200/票&#10;海運費 USD 1,200/20GP&#10;目的港費用 USD 2,000/40HQ"></textarea>
+          <textarea id="paste-text" rows="6" autocomplete="off" placeholder="運費 USD 3.2/kg&#10;燃油附加費 USD 0.8/kg&#10;報關費 TWD 1,200/票&#10;海運費 USD 1,200/20GP&#10;目的港費用 USD 2,000/40HQ"></textarea>
           <label class="fees-only">
             <input id="fees-only" type="checkbox" checked>
             只匯入費用（略過貨物與說明文字）
@@ -171,11 +171,11 @@
               <button type="button" id="weight-unit-lb" data-weight-unit="lb" aria-pressed="false">英磅 lb</button>
             </div>
           </div>
-          <input id="gross-weight" data-field="grossWeightKg" type="number" step="any" min="0" inputmode="decimal" aria-label="毛重">
+          <input id="gross-weight" data-field="grossWeightKg" type="number" step="any" min="0" inputmode="decimal" autocomplete="off" aria-label="毛重">
           <span id="weight-kg" class="hint" hidden></span>
         </div>
         <label>總件數
-          <input id="total-pieces" data-field="pieces" type="number" step="any" min="0" inputmode="decimal">
+          <input id="total-pieces" data-field="pieces" type="number" step="any" min="0" inputmode="decimal" autocomplete="off">
           <span class="hint">空白時用下方各列件數加總</span>
         </label>
         <label>運輸方式
@@ -187,7 +187,7 @@
           </select>
         </label>
         <label id="container-field">櫃數
-          <input id="container-count" data-field="containerCount" type="number" step="any" min="0" inputmode="decimal">
+          <input id="container-count" data-field="containerCount" type="number" step="any" min="0" inputmode="decimal" autocomplete="off">
           <span class="hint">每櫃的數量用這裡。</span>
         </label>
       </div>

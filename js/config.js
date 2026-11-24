@@ -11,6 +11,7 @@
       { id: "piece", label: "Per PKG" },
       { id: "shipment", label: "Per Shipment" },
       { id: "set", label: "Per Set" },
+      { id: "plt", label: "Per PLT" },
       { id: "container", label: "Per Container" },
     ],
     modes: [
@@ -83,6 +84,14 @@
   NG.formatMeasure = function (value, digits) {
     if (value == null || !isFinite(Number(value))) return "—";
     return Number(value).toLocaleString("zh-TW", { maximumFractionDigits: digits });
+  };
+
+  NG.formatFixed = function (value, digits) {
+    if (value == null || !isFinite(Number(value))) return "—";
+    return Number(value).toLocaleString("zh-TW", {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
   };
 
   NG.formatPercent = function (rate) {

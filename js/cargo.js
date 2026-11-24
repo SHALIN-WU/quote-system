@@ -4,6 +4,13 @@
     return Math.round((value + Number.EPSILON) * factor) / factor;
   }
 
+  function ceilHalfKg(value) {
+    const n = Number(value);
+    if (!isFinite(n) || n <= 0) return 0;
+    const milli = Math.round((n + Number.EPSILON) * 1000);
+    return Math.ceil(milli / 500) / 2;
+  }
+
   const LB_TO_KG = 0.453592;
 
   function dimUnitOf(unit) {
@@ -132,7 +139,9 @@
       piecesFromDims: piecesFromDims,
       gross: gross,
       volumetric: volumetric,
-      chargeable: round(Math.max(gross, volumetric), 3),
+      chargeable: mode === "air"
+        ? ceilHalfKg(Math.max(gross, volumetric))
+        : round(Math.max(gross, volumetric), 3),
       warning: warning,
     };
   }
@@ -147,7 +156,10 @@
     } else {
       formula = "材積重 = CBM × " + NG.num(settings.seaKgPerCbm) + "（1 CBM = " + NG.num(settings.seaKgPerCbm) + " 公斤）";
     }
-    return formula + "。計費重量取毛重與材積重較大者。才 = CBM × " + NG.num(settings.caiFactor) + "。";
+    const chargeRule = summary.mode === "air"
+      ? "計費重量取毛重與材積重較大者，再無條件進位到 0.5 公斤"
+      : "計費重量取毛重與材積重較大者";
+    return formula + "。" + chargeRule + "。才 = CBM × " + NG.num(settings.caiFactor) + "。";
   }
 
   function containerTotals(cargo) {
