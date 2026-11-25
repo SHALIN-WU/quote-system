@@ -21,6 +21,10 @@
     return rows;
   }
 
+  function isCargoDecimal(label) {
+    return label === "材積（CBM）" || label === "才" || label === "材積重（公斤）";
+  }
+
   function cargoFacts(model) {
     const summary = model.summary || {};
     return cargoRows(model).filter(function (row) {
@@ -33,6 +37,7 @@
         if (model.mode === "air") return [row[0], NG.formatFixed(row[1], 1)];
         return [row[0], NG.formatMeasure(row[1], 3)];
       }
+      if (isCargoDecimal(row[0])) return [row[0], NG.formatFixed(row[1], 2)];
       return row;
     });
   }
@@ -115,9 +120,13 @@
     ];
     const moneyCells = [];
     const measureCells = [];
+    const cargoDecimalCells = [];
     cargoRows(model).forEach(function (row) {
       if (model.mode === "air" && row[0] === "計費重量（公斤）" && typeof row[1] === "number") {
         measureCells.push({ r: rows.length, c: 1 });
+      }
+      if (isCargoDecimal(row[0]) && typeof row[1] === "number") {
+        cargoDecimalCells.push({ r: rows.length, c: 1 });
       }
       rows.push(row);
     });
@@ -167,6 +176,10 @@
     measureCells.forEach(function (pos) {
       const measure = sheet[window.XLSX.utils.encode_cell(pos)];
       if (measure && typeof measure.v === "number") measure.z = "#,##0.0";
+    });
+    cargoDecimalCells.forEach(function (pos) {
+      const decimalCell = sheet[window.XLSX.utils.encode_cell(pos)];
+      if (decimalCell && typeof decimalCell.v === "number") decimalCell.z = "#,##0.00";
     });
     twdRows.forEach(function (index) {
       const cell = sheet[window.XLSX.utils.encode_cell({ r: index, c: 1 })];
