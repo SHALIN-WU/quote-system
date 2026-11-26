@@ -230,10 +230,22 @@ export async function requireActiveUser(request, env) {
   return user;
 }
 
-export async function requireAdmin(request, env) {
+export async function requireUser(request, env) {
   const user = await requireActiveUser(request, env);
   if (!user) return { user: null, response: json({ error: "尚未登入" }, 401) };
-  if (user.role !== "admin") return { user, response: json({ error: "沒有權限" }, 403) };
-  if (!env.DB) return { user, response: json({ error: "請稍後再試" }, 500) };
+  if (!env.DB) return { user: null, response: json({ error: "請稍後再試" }, 500) };
   return { user, response: null };
+}
+
+export function forbidUnless(user, roles) {
+  if (!roles.includes(user.role)) return json({ error: "沒有權限" }, 403);
+  return null;
+}
+
+export async function requireAdmin(request, env) {
+  const gate = await requireUser(request, env);
+  if (gate.response) return gate;
+  const denied = forbidUnless(gate.user, ["admin"]);
+  if (denied) return { user: gate.user, response: denied };
+  return gate;
 }

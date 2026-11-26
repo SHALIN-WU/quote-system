@@ -53,6 +53,12 @@
         location.href = "/login";
         return;
       }
+      NG.currentUser = {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+      };
       applyUser(user);
       showApp();
     } catch (err) {

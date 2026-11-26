@@ -4,6 +4,7 @@
     seq: "northgo.seq.v1",
     settings: "northgo.settings.v1",
     draft: "northgo.draft.v1",
+    dirty: "northgo.draft.dirty.v1",
   };
   const memory = {};
 
@@ -241,12 +242,27 @@
         : "USD";
       return settings;
     },
+    loadPrefs: function () {
+      const saved = read(KEYS.settings) || {};
+      return {
+        dimUnit: saved.dimUnit === "inch" ? "inch" : "cm",
+        weightUnit: saved.weightUnit === "lb" ? "lb" : "kg",
+        defaultCurrency: /^[A-Za-z]{3}$/.test(saved.defaultCurrency || "")
+          ? String(saved.defaultCurrency).toUpperCase()
+          : "USD",
+      };
+    },
     saveSettings: function (settings) {
+      const prev = read(KEYS.settings) || {};
+      const defaults = NG.config && NG.config.defaults ? NG.config.defaults : {};
+      function keep(key) {
+        return typeof prev[key] === "number" && isFinite(prev[key]) ? prev[key] : defaults[key];
+      }
       return write(KEYS.settings, {
-        airKgPerCbm: settings.airKgPerCbm,
-        seaKgPerCbm: settings.seaKgPerCbm,
-        expressDivisor: settings.expressDivisor,
-        caiFactor: settings.caiFactor,
+        airKgPerCbm: keep("airKgPerCbm"),
+        seaKgPerCbm: keep("seaKgPerCbm"),
+        expressDivisor: keep("expressDivisor"),
+        caiFactor: keep("caiFactor"),
         dimUnit: settings.dimUnit === "inch" ? "inch" : "cm",
         weightUnit: settings.weightUnit === "lb" ? "lb" : "kg",
         defaultCurrency: /^[A-Za-z]{3}$/.test(settings.defaultCurrency || "")
@@ -284,11 +300,20 @@
       if (!draft || typeof draft !== "object" || !Array.isArray(draft.items)) return null;
       return draft;
     },
-    saveDraft: function (draft) {
-      return write(KEYS.draft, draft);
+    saveDraft: function (draft, pending) {
+      const ok = write(KEYS.draft, draft);
+      if (!ok) return false;
+      if (pending === true) write(KEYS.dirty, true);
+      else if (pending === false) write(KEYS.dirty, false);
+      return true;
+    },
+    pendingDraft: function () {
+      if (read(KEYS.dirty) !== true) return null;
+      return NG.storage.loadDraft();
     },
     clearDraft: function () {
       remove(KEYS.draft);
+      remove(KEYS.dirty);
     },
     cloneData: function (value) {
       return JSON.parse(JSON.stringify(value));

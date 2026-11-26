@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>物流報價系統</title>
   <!--
-    快取版本 ASSET_VERSION：20261126b
+    快取版本 ASSET_VERSION：20261126d
     之後每次改 js/ 或 css/，要記得把這個版本號改掉，
     並把本檔 css 與所有 js/ 的 ?v= 改成同一個值。libs/ 與外部網址不要加。
   -->
-  <link rel="stylesheet" href="css/styles.css?v=20261126b">
+  <link rel="stylesheet" href="css/styles.css?v=20261126d">
   <script>
     document.documentElement.classList.add("auth-locked");
   </script>
@@ -53,6 +53,10 @@
     <button type="button" data-step="quote" aria-selected="false">4 報價單</button>
   </nav>
   <p id="status" class="status no-print" role="status"></p>
+  <div id="legacy-banner" class="legacy-banner no-print" hidden>
+    <p id="legacy-banner-text"></p>
+    <button type="button" class="btn" id="legacy-download">下載這台瀏覽器的舊報價</button>
+  </div>
 
   <main>
     <section id="panel-import" class="panel">
@@ -250,7 +254,7 @@
       <p id="metric-note" class="hint"></p>
 
       <details class="fold" open>
-        <summary>計算設定（存在這台瀏覽器）</summary>
+        <summary>計算設定（全公司共用，只有管理員能改）</summary>
         <div class="cargo-grid">
           <label>空運每 CBM 公斤數
             <input id="set-air" data-setting="airKgPerCbm" type="number" step="any" min="0">
@@ -339,7 +343,7 @@
             <input id="valid-until" type="date">
           </label>
           <label>報價單號
-            <input id="quote-number" autocomplete="off">
+            <input id="quote-number" autocomplete="off" readonly>
           </label>
           <label class="span-2">備註
             <textarea id="remarks" rows="3"></textarea>
@@ -367,7 +371,7 @@
     </section>
   </main>
 
-  <footer class="legal no-print">資料只存在這台瀏覽器，不會上傳。</footer>
+  <footer class="legal no-print">已儲存的報價在共用資料庫。還沒存成功的內容留在這台瀏覽器。</footer>
 
   <dialog id="history-dialog" class="no-print">
     <div class="row-between">
@@ -382,21 +386,31 @@
     <p id="backup-msg" class="hint" hidden></p>
     <div id="backup-import-panel" hidden>
       <p id="backup-import-count"></p>
-      <label class="check">
-        <input type="radio" name="backup-mode" value="merge" checked>
-        合併（同報價單號以較新的為準）
-      </label>
-      <label class="check">
-        <input type="radio" name="backup-mode" value="replace">
-        全部取代
-      </label>
-      <p class="hint">合併只合併歷史報價，草稿和設定維持現況。全部取代會換掉歷史報價、目前草稿、計算設定、預設幣別和單位偏好，並先下載目前資料。檔案只在這台電腦處理，不會上傳。</p>
+      <p>合併進共用資料庫。同報價單號以較新的為準。</p>
+      <p class="hint">只合併歷史報價。全公司計算設定、這台瀏覽器的草稿和單位偏好都不會被這次匯入改掉。不會清掉現有報價。</p>
       <div class="row-actions">
         <button type="button" class="btn" id="backup-import-confirm">確認</button>
         <button type="button" class="btn ghost" id="backup-import-cancel">取消</button>
       </div>
     </div>
-    <input id="history-q" type="search" placeholder="搜尋單號、客戶或日期">
+    <div class="history-filters">
+      <input id="history-q" type="search" placeholder="搜尋單號、客戶或日期" aria-label="搜尋單號、客戶或日期">
+      <label>運輸方式
+        <select id="history-mode" aria-label="運輸方式">
+          <option value="">全部</option>
+          <option value="air">空運</option>
+          <option value="lcl">海運併櫃</option>
+          <option value="fcl">海運整櫃</option>
+          <option value="express">快遞</option>
+        </select>
+      </label>
+      <label>起日
+        <input id="history-from" type="date" aria-label="起日">
+      </label>
+      <label>迄日
+        <input id="history-to" type="date" aria-label="迄日">
+      </label>
+    </div>
     <div id="history-list"></div>
   </dialog>
 
@@ -413,22 +427,23 @@
     <option value="AUD"></option>
   </datalist>
 
-  <noscript><p class="status">此系統需要 JavaScript。資料只會留在這台電腦的瀏覽器裡。</p></noscript>
+  <noscript><p class="status">此系統需要 JavaScript。</p></noscript>
   <script src="libs/mammoth.browser.min.js"></script>
   <script src="libs/xlsx.full.min.js"></script>
   <script src="libs/pdf.min.js"></script>
   <!-- 以下 ?v= 須與 head 的快取版本 ASSET_VERSION 相同 -->
-  <script src="js/config.js?v=20261126b"></script>
-  <script src="js/storage.js?v=20261126b"></script>
-  <script src="js/parse.js?v=20261126b"></script>
-  <script src="js/import-word.js?v=20261126b"></script>
-  <script src="js/import-excel.js?v=20261126b"></script>
-  <script src="js/import-pdf.js?v=20261126b"></script>
-  <script src="js/cargo.js?v=20261126b"></script>
-  <script src="js/pricing.js?v=20261126b"></script>
-  <script src="js/quote-doc.js?v=20261126b"></script>
-  <script src="js/history.js?v=20261126b"></script>
-  <script src="js/app.js?v=20261126b"></script>
-  <script src="js/auth.js?v=20261126b"></script>
+  <script src="js/config.js?v=20261126d"></script>
+  <script src="js/storage.js?v=20261126d"></script>
+  <script src="js/api.js?v=20261126d"></script>
+  <script src="js/parse.js?v=20261126d"></script>
+  <script src="js/import-word.js?v=20261126d"></script>
+  <script src="js/import-excel.js?v=20261126d"></script>
+  <script src="js/import-pdf.js?v=20261126d"></script>
+  <script src="js/cargo.js?v=20261126d"></script>
+  <script src="js/pricing.js?v=20261126d"></script>
+  <script src="js/quote-doc.js?v=20261126d"></script>
+  <script src="js/history.js?v=20261126d"></script>
+  <script src="js/app.js?v=20261126d"></script>
+  <script src="js/auth.js?v=20261126d"></script>
 </body>
 </html>

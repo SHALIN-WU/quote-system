@@ -10,6 +10,10 @@
   let draftGeneration = 0;
   let suppressDraft = false;
   let pendingBackup = null;
+  let settingsReady = false;
+  let settingsTimer = 0;
+  let historyTimer = 0;
+  let historyToken = 0;
 
   function $(id) { return document.getElementById(id); }
 
@@ -43,8 +47,37 @@
       showTwdTotal: false,
       showZeroLines: false,
       rates: {},
+      calcSettings: null,
       createdAt: null,
     };
+  }
+
+  function cleanCalc(value) {
+    if (!value || typeof value !== "object") return null;
+    const keys = ["airKgPerCbm", "seaKgPerCbm", "expressDivisor", "caiFactor"];
+    const out = {};
+    for (let i = 0; i < keys.length; i++) {
+      const n = Number(value[keys[i]]);
+      if (!isFinite(n)) return null;
+      out[keys[i]] = n;
+    }
+    return out;
+  }
+
+  function roleName() {
+    return NG.currentUser && NG.currentUser.role ? NG.currentUser.role : "";
+  }
+
+  function canWrite() {
+    return roleName() === "admin" || roleName() === "sales";
+  }
+
+  function canSeeCost() {
+    return canWrite();
+  }
+
+  function isAdmin() {
+    return roleName() === "admin";
   }
 
   function normalizeState(raw) {
@@ -107,6 +140,7 @@
       showTwdTotal: !!source.showTwdTotal,
       showZeroLines: !!source.showZeroLines,
       rates: source.rates || {},
+      calcSettings: cleanCalc(source.calcSettings),
       createdAt: source.createdAt || null,
       updatedAt: source.updatedAt || null,
     };
@@ -127,6 +161,7 @@
       showTwdTotal: state.showTwdTotal,
       showZeroLines: !!state.showZeroLines,
       rates: state.rates,
+      calcSettings: state.calcSettings || null,
       createdAt: state.createdAt,
       updatedAt: state.updatedAt || null,
     };
@@ -153,7 +188,7 @@
     draftTimer = window.setTimeout(function () {
       draftTimer = 0;
       if (suppressDraft || generation !== draftGeneration) return;
-      if (!NG.storage.saveDraft(snapshot())) setStatus("無法寫入瀏覽器儲存空間");
+      if (!NG.storage.saveDraft(snapshot(), true)) setStatus("無法寫入瀏覽器儲存空間");
     }, 250);
   }
 
@@ -163,8 +198,22 @@
     draftTimer = 0;
   }
 
+  function calcForQuote() {
+    const frozen = state && cleanCalc(state.calcSettings);
+    if (frozen) return frozen;
+    if (!settingsReady) {
+      return { airKgPerCbm: 0, seaKgPerCbm: 0, expressDivisor: 0, caiFactor: 0 };
+    }
+    return {
+      airKgPerCbm: settings.airKgPerCbm,
+      seaKgPerCbm: settings.seaKgPerCbm,
+      expressDivisor: settings.expressDivisor,
+      caiFactor: settings.caiFactor,
+    };
+  }
+
   function currentSummary() {
-    return NG.cargo.summarize(state.cargo, settings);
+    return NG.cargo.summarize(state.cargo, calcForQuote());
   }
 
   function stepChargeableKg() {
@@ -367,6 +416,7 @@
     body.replaceChildren();
     state.items.forEach(function (item) { body.appendChild(buildItemRow(item, "import")); });
     $("import-empty").hidden = state.items.length > 0;
+    paintGuard();
   }
 
   function renderPriceTable() {
@@ -374,6 +424,7 @@
     body.replaceChildren();
     state.items.forEach(function (item) { body.appendChild(buildItemRow(item, "price")); });
     $("price-empty").hidden = state.items.length > 0;
+    paintGuard();
   }
 
   function paintWeightUnit() {
@@ -393,6 +444,7 @@
   }
 
   function setWeightUnit(next) {
+    if (!canWrite()) return;
     const target = next === "lb" ? "lb" : "kg";
     const current = state.cargo.weightUnit === "lb" ? "lb" : "kg";
     if (target === current) return;
@@ -446,6 +498,7 @@
   }
 
   function setDimUnit(next) {
+    if (!canWrite()) return;
     const target = next === "inch" ? "inch" : "cm";
     const current = dimUnit();
     if (target === current) return;
@@ -492,6 +545,7 @@
       body.appendChild(tr);
     });
     paintDimUnit();
+    paintGuard();
   }
 
   function blankContainer() {
@@ -534,6 +588,7 @@
       tr.appendChild(action);
       body.appendChild(tr);
     });
+    paintGuard();
   }
 
   function paintMode() {
@@ -600,7 +655,8 @@
       ? NG.formatFixed(summary.chargeable, 1)
       : NG.formatMeasure(summary.chargeable, 3);
     const imported = summary.cbmFromImport ? "合計 CBM 使用匯入的材積。" : "";
-    $("metric-note").textContent = (summary.warning ? summary.warning + "。" : "") + imported + NG.cargo.formulaText(summary, settings);
+    const frozen = state && state.calcSettings ? "這張報價的材積重與計費重量使用存檔時的計算參數。" : "";
+    $("metric-note").textContent = (summary.warning ? summary.warning + "。" : "") + imported + NG.cargo.formulaText(summary, calcForQuote()) + frozen;
   }
 
   function renderTotals() {
@@ -775,6 +831,10 @@
         input.type = "checkbox";
         input.checked = true;
         input.addEventListener("change", function () {
+          if (!canWrite()) {
+            input.checked = true;
+            return;
+          }
           item.hideFromQuote = input.checked;
           renderQuoteBody();
           renderTotals();
@@ -812,6 +872,7 @@
     add.dataset.action = "add-quote-line";
     add.textContent = "＋ 新增一列";
     host.appendChild(add);
+    paintGuard();
   }
 
   function refreshQuoteTotals() {
@@ -857,6 +918,7 @@
   }
 
   function onQuoteEdit(event) {
+    if (!canWrite()) return;
     const target = event.target;
     if (target.id === "show-zero-lines") {
       if (event.type !== "change") return;
@@ -901,6 +963,7 @@
   }
 
   function addQuoteLine() {
+    if (!canWrite()) return;
     state.items.push(makeItem({ name: "" }));
     renderQuoteBody();
     renderTotals();
@@ -910,6 +973,7 @@
   }
 
   function deleteQuoteLine(id) {
+    if (!canWrite()) return;
     state.items = state.items.filter(function (item) { return item.id !== id; });
     renderQuoteBody();
     renderTotals();
@@ -977,6 +1041,7 @@
       label.append(prefix, input, suffix);
       box.appendChild(label);
     });
+    paintGuard();
   }
 
   function updateTwdPrint() {
@@ -1043,6 +1108,7 @@
   }
 
   function onItemEdit(event) {
+    if (!canWrite()) return;
     const target = event.target;
     const field = target.dataset && target.dataset.field;
     if (!field) return;
@@ -1092,6 +1158,7 @@
   }
 
   function addItem() {
+    if (!canWrite()) return;
     state.items.push(makeItem({ name: "" }));
     renderVisibleItems();
     const body = currentStep === "price" ? $("price-body") : $("import-body");
@@ -1100,17 +1167,19 @@
   }
 
   function onCargoEdit(event) {
+    if (!canWrite()) return;
     const target = event.target;
     if (target.dataset && target.dataset.setting) {
+      if (!isAdmin()) return;
       const key = target.dataset.setting;
       const value = parseFloat(target.value);
-      if (!isFinite(value)) return;
+      if (!isFinite(value) || !(value > 0)) return;
       settings[key] = value;
-      NG.storage.saveSettings(settings);
       syncAutoQty();
       renderMetrics();
       renderTotals();
       scheduleDraft();
+      scheduleSharedSettings();
       return;
     }
     const field = target.dataset && target.dataset.field;
@@ -1147,17 +1216,28 @@
     scheduleDraft();
   }
 
-  function ensureNumber() {
+  async function ensureNumber() {
     if (String(state.quoteNumber || "").trim()) return state.quoteNumber;
-    state.quoteNumber = NG.storage.allocateNumber(state.quoteDate || NG.todayISO());
-    $("quote-number").value = state.quoteNumber;
-    return state.quoteNumber;
+    if (!canWrite()) return "";
+    try {
+      const data = await NG.api.post("/api/quote-numbers", {
+        quoteDate: state.quoteDate || NG.todayISO(),
+      });
+      state.quoteNumber = data.quoteNumber;
+      if ($("quote-number")) $("quote-number").value = state.quoteNumber;
+      scheduleDraft();
+      return state.quoteNumber;
+    } catch (error) {
+      setStatus("無法取得單號，沒有另外編號。畫面上的內容還在。");
+      throw error;
+    }
   }
 
   function setStep(name, force) {
+    if (!canSeeCost() && (name === "import" || name === "price")) name = "quote";
     if (!force && name === currentStep) return;
     if (name === "price" || name === "quote") syncAutoQty();
-    if (name === "quote") ensureNumber();
+    if (name === "quote" && canWrite()) ensureNumber().catch(function () {});
     currentStep = name;
     STEPS.forEach(function (step) {
       $("panel-" + step).hidden = step !== name;
@@ -1182,6 +1262,7 @@
       syncTwdEditor(true);
       updateTwdPrint();
     }
+    paintGuard();
     scheduleDraft();
   }
 
@@ -1266,6 +1347,7 @@
   }
 
   function applyMapping() {
+    if (!canWrite()) return;
     if (!excelSession) return;
     const headerRow = Number($("map-header").value);
     function col(id) {
@@ -1303,6 +1385,7 @@
   }
 
   async function onWord(file) {
+    if (!canWrite()) return;
     const result = await NG.importWord.fromFile(file, {
       feesOnly: feesOnlyChecked(),
       chargeableKg: stepChargeableKg(),
@@ -1327,6 +1410,7 @@
   }
 
   async function onExcel(file) {
+    if (!canWrite()) return;
     const result = await NG.importExcel.fromFile(file);
     excelSession = {
       rows: result.rows,
@@ -1346,6 +1430,7 @@
   }
 
   async function onPdf(file) {
+    if (!canWrite()) return;
     setStatus("正在讀取 PDF…");
     const result = await NG.importPdf.fromFile(file);
     if (!result.text) {
@@ -1563,6 +1648,7 @@
   }
 
   function parsePaste() {
+    if (!canWrite()) return;
     const items = NG.parse.parseCostText($("paste-text").value, {
       feesOnly: feesOnlyChecked(),
       chargeableKg: stepChargeableKg(),
@@ -1579,6 +1665,7 @@
   }
 
   function applyMarkup() {
+    if (!canWrite()) return;
     const raw = $("markup-percent").value;
     const percent = parseFloat(raw);
     if (!isFinite(percent)) {
@@ -1596,6 +1683,7 @@
   }
 
   function recalcQty() {
+    if (!canWrite()) return;
     state.items.forEach(function (item) { item.qtyManual = false; });
     syncAutoQty();
     renderPriceTable();
@@ -1619,33 +1707,109 @@
     syncTwdEditor(true);
     updateTwdPrint();
     if (!options || options.skipDraft !== true) scheduleDraft();
+    if (!canWrite()) paintGuard();
   }
 
-  function saveQuote() {
-    stopDraft();
-    ensureNumber();
-    if (!state.id) state.id = NG.uid();
-    const now = new Date().toISOString();
-    if (!state.createdAt) state.createdAt = now;
-    state.updatedAt = now;
-    const record = snapshot();
-    if (!NG.storage.upsertQuote(record)) {
-      scheduleDraft();
-      setStatus("儲存失敗，瀏覽器空間不足");
+  function saveFailure(error) {
+    scheduleDraft();
+    if (error && error.status === 409) {
+      setStatus("這筆剛剛被其他人改過。伺服器上的版本沒被蓋掉。你畫面上的修改還在。");
       return;
     }
-    if (!NG.storage.saveDraft(record)) {
-      setStatus("已存入歷史報價，但草稿無法更新");
+    if (error && error.status === 403) {
+      setStatus("沒有權限，沒有存到伺服器。畫面上的內容還在。");
+      return;
     }
-    fillQuoteForm();
-    renderQuoteBody();
-    setStatus(state.customerName ? "已儲存 " + state.quoteNumber : "已儲存 " + state.quoteNumber + "（尚未填客戶名稱）");
+    setStatus("沒有存到伺服器，這筆還在這台電腦");
   }
 
-  function renderHistory() {
+  async function saveQuote() {
+    if (!canWrite()) {
+      setStatus("沒有權限，沒有存到伺服器。畫面上的內容還在。");
+      return;
+    }
+    if (!settingsReady && !(state && state.calcSettings)) {
+      setStatus("讀不到計算設定，先不要儲存報價");
+      return;
+    }
+    stopDraft();
+    try {
+      await ensureNumber();
+      const body = { document: snapshot() };
+      let payload;
+      if (state.id) {
+        body.updatedAt = state.updatedAt;
+        payload = await NG.api.put("/api/quotes/" + encodeURIComponent(state.id), body);
+      } else {
+        payload = await NG.api.post("/api/quotes", body);
+      }
+      applyState(payload.item.document, { skipDraft: true });
+      if (!NG.storage.saveDraft(snapshot(), false)) setStatus("已存入共用資料庫，但這台瀏覽器的草稿無法更新");
+      fillQuoteForm();
+      renderQuoteBody();
+      setStatus(state.customerName ? "已儲存 " + state.quoteNumber : "已儲存 " + state.quoteNumber + "（尚未填客戶名稱）");
+    } catch (error) {
+      saveFailure(error);
+    }
+  }
+
+  function moneyText(quote) {
+    const groups = quote.sellingTotals || [];
+    if (!groups.length) return "沒有費用項目";
+    return groups.map(function (group) {
+      return group.currency + " " + NG.formatMoney(group.quote);
+    }).join("、");
+  }
+
+  function historyButtons(quote) {
+    const pairs = [["載入", "load-quote"]];
+    if (canWrite()) pairs.push(["複製", "copy-quote"]);
+    if (isAdmin()) pairs.push(["刪除", "delete-quote"]);
+    return pairs.map(function (pair) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = pair[1] === "delete-quote" ? "btn danger" : "btn ghost";
+      button.dataset.action = pair[1];
+      button.dataset.id = quote.id;
+      button.dataset.number = quote.quoteNumber || "";
+      button.textContent = pair[0];
+      return button;
+    });
+  }
+
+  async function renderHistory() {
     const host = $("history-list");
+    if (!host) return;
+    const token = ++historyToken;
     host.replaceChildren();
-    const quotes = NG.history.search(NG.storage.loadQuotes(), $("history-q").value);
+    const waiting = document.createElement("p");
+    waiting.className = "empty";
+    waiting.textContent = "讀取報價中";
+    host.appendChild(waiting);
+    const params = new URLSearchParams();
+    const q = $("history-q") ? $("history-q").value : "";
+    const mode = $("history-mode") ? $("history-mode").value : "";
+    const dateFrom = $("history-from") ? $("history-from").value : "";
+    const dateTo = $("history-to") ? $("history-to").value : "";
+    if (q.trim()) params.set("q", q.trim());
+    if (mode) params.set("mode", mode);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    let data;
+    try {
+      data = await NG.api.get("/api/quotes" + (params.toString() ? "?" + params.toString() : ""));
+      if (token !== historyToken) return;
+    } catch (error) {
+      if (token !== historyToken) return;
+      host.replaceChildren();
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "讀不到報價";
+      host.appendChild(p);
+      return;
+    }
+    host.replaceChildren();
+    const quotes = data && Array.isArray(data.items) ? data.items : [];
     if (!quotes.length) {
       const p = document.createElement("p");
       p.className = "empty";
@@ -1659,68 +1823,101 @@
       const title = document.createElement("h3");
       title.textContent = quote.quoteNumber || "（無單號）";
       const meta = document.createElement("p");
-      meta.textContent = (quote.customerName || "未填客戶") + "　" + (quote.quoteDate || "");
+      meta.textContent = (quote.customerName || "未填客戶") + "　" + (quote.quoteDate || "") + "　" + NG.modeLabel(quote.mode);
+      const who = document.createElement("p");
+      const created = quote.createdBy && quote.createdBy.displayName ? quote.createdBy.displayName : "未知使用者";
+      const updated = quote.updatedBy && quote.updatedBy.displayName ? quote.updatedBy.displayName : created;
+      who.textContent = "建立：" + created + "　最後修改：" + updated;
       const money = document.createElement("p");
-      money.textContent = NG.history.moneyLine(quote);
+      money.textContent = moneyText(quote);
       const actions = document.createElement("div");
       actions.className = "row-actions";
-      [["載入", "load-quote"], ["複製", "copy-quote"], ["刪除", "delete-quote"]].forEach(function (pair) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = pair[1] === "delete-quote" ? "btn danger" : "btn ghost";
-        button.dataset.action = pair[1];
-        button.dataset.id = quote.id;
-        button.textContent = pair[0];
-        actions.appendChild(button);
-      });
-      card.append(title, meta, money, actions);
+      historyButtons(quote).forEach(function (button) { actions.appendChild(button); });
+      card.append(title, meta, who, money, actions);
       host.appendChild(card);
     });
+    if (data.limit && quotes.length >= data.limit) {
+      const more = document.createElement("p");
+      more.className = "hint";
+      more.textContent = "只顯示最新 " + data.limit + " 筆，請用搜尋縮小範圍。";
+      host.appendChild(more);
+    }
   }
 
-  function loadQuote(id) {
-    const quote = NG.storage.loadQuotes().find(function (item) { return item.id === id; });
-    if (!quote) return;
-    const next = NG.storage.cloneData(quote);
-    next.items.forEach(function (item) { item.qtyManual = true; });
-    applyState(next);
-    setStep("price", true);
+  async function loadQuote(id) {
+    let payload;
+    try {
+      payload = await NG.api.get("/api/quotes/" + encodeURIComponent(id));
+    } catch (error) {
+      setStatus("讀不到這筆報價，畫面上的內容還在");
+      return;
+    }
+    const next = payload.item.document;
+    (next.items || []).forEach(function (item) { item.qtyManual = true; });
+    applyState(next, { skipDraft: true });
+    NG.storage.saveDraft(snapshot(), false);
+    setStep(canSeeCost() ? "price" : "quote", true);
     $("history-dialog").close();
-    setStatus("已載入 " + (quote.quoteNumber || "") + "。數量先維持原報價，要重算請按「依貨物重算數量」。");
+    setStatus("已載入 " + (next.quoteNumber || "") + "。數量先維持原報價。材積重與計費重量使用這張報價存檔時的計算參數。");
   }
 
-  function copyQuote(id) {
-    const quote = NG.storage.loadQuotes().find(function (item) { return item.id === id; });
-    if (!quote) return;
-    const next = NG.storage.cloneData(quote);
+  async function copyQuote(id) {
+    if (!canWrite()) {
+      setStatus("沒有權限，沒有新增報價");
+      return;
+    }
+    let payload;
+    try {
+      payload = await NG.api.get("/api/quotes/" + encodeURIComponent(id));
+    } catch (error) {
+      setStatus("讀不到這筆報價，畫面上的內容還在");
+      return;
+    }
+    const next = payload.item.document;
     next.id = null;
     next.createdAt = null;
     next.updatedAt = null;
+    next.calcSettings = null;
     next.quoteDate = NG.todayISO();
     next.validUntil = NG.addDays(next.quoteDate, 14);
-    next.quoteNumber = NG.storage.allocateNumber(next.quoteDate);
-    next.items.forEach(function (item) {
+    next.quoteNumber = "";
+    (next.items || []).forEach(function (item) {
       item.id = NG.uid();
       item.qtyManual = true;
     });
-    next.cargo.dimensions.forEach(function (dim) { dim.id = NG.uid(); });
+    (next.cargo.dimensions || []).forEach(function (dim) { dim.id = NG.uid(); });
     if (Array.isArray(next.cargo.containers)) {
       next.cargo.containers.forEach(function (row) { row.id = NG.uid(); });
     }
-    applyState(next);
+    applyState(next, { skipDraft: true });
+    scheduleDraft();
     setStep("price", true);
     $("history-dialog").close();
-    setStatus("已複製成新單 " + next.quoteNumber + "，尚未儲存。");
+    try {
+      await ensureNumber();
+    } catch (error) {
+      setStatus("已複製內容，但沒有取得新單號。畫面上的內容還在，尚未存到伺服器。");
+      return;
+    }
+    setStatus("已複製成新單 " + state.quoteNumber + "，尚未儲存。計算參數用現在的共用設定。");
   }
 
-  function deleteQuote(id) {
-    const quote = NG.storage.loadQuotes().find(function (item) { return item.id === id; });
-    const label = quote && quote.quoteNumber ? quote.quoteNumber : "這筆報價";
-    if (!window.confirm("刪除 " + label + "？此動作只會移除這台瀏覽器裡的紀錄。")) return;
-    NG.storage.deleteQuote(id);
+  async function deleteQuote(id, quoteNumber) {
+    if (!isAdmin()) {
+      setStatus("沒有權限，沒有刪除");
+      return;
+    }
+    const label = quoteNumber || "這筆報價";
+    if (!window.confirm("刪除 " + label + "？會從共用資料庫刪除，所有人都看不到。")) return;
+    try {
+      await NG.api.del("/api/quotes/" + encodeURIComponent(id));
+    } catch (error) {
+      setStatus("沒有刪除。畫面上的內容還在。");
+      return;
+    }
     if (state.id === id) state.id = null;
     renderHistory();
-    setStatus("已刪除報價紀錄");
+    setStatus("已從共用資料庫刪除報價");
   }
 
   function clearImportArtifacts() {
@@ -1786,6 +1983,7 @@
   }
 
   function newQuote() {
+    if (!canWrite()) return;
     if (hasContent(snapshot()) && !window.confirm("要清除目前內容，開始一筆新報價嗎？已儲存的歷史報價不會被刪除。")) return;
     suppressDraft = true;
     try {
@@ -1806,6 +2004,7 @@
   }
 
   function onRateInput(event) {
+    if (!canWrite()) return;
     const code = event.target.dataset.currency;
     state.rates[code] = event.target.value;
     updateTwdPrint();
@@ -1813,6 +2012,7 @@
   }
 
   function onMeta(event) {
+    if (!canWrite()) return;
     const map = {
       "customer-name": "customerName",
       "quote-date": "quoteDate",
@@ -1823,7 +2023,7 @@
       "markup-percent": "markupPercent",
     };
     const key = map[event.target.id];
-    if (!key) return;
+    if (!key || key === "quoteNumber") return;
     state[key] = event.target.value;
     if (currentStep === "quote" && key !== "markupPercent") renderQuoteBody();
     scheduleDraft();
@@ -1854,6 +2054,117 @@
     return NG.storage.saveDraft(snapshot());
   }
 
+  let confirmedCalc = null;
+
+  function applySharedSettings(data) {
+    settings.airKgPerCbm = data.airKgPerCbm;
+    settings.seaKgPerCbm = data.seaKgPerCbm;
+    settings.expressDivisor = data.expressDivisor;
+    settings.caiFactor = data.caiFactor;
+    settings.updatedAt = data.updatedAt;
+    settingsReady = true;
+    confirmedCalc = {
+      airKgPerCbm: data.airKgPerCbm,
+      seaKgPerCbm: data.seaKgPerCbm,
+      expressDivisor: data.expressDivisor,
+      caiFactor: data.caiFactor,
+      updatedAt: data.updatedAt,
+    };
+  }
+
+  function revertSharedSettings() {
+    if (!confirmedCalc) return;
+    settings.airKgPerCbm = confirmedCalc.airKgPerCbm;
+    settings.seaKgPerCbm = confirmedCalc.seaKgPerCbm;
+    settings.expressDivisor = confirmedCalc.expressDivisor;
+    settings.caiFactor = confirmedCalc.caiFactor;
+    settings.updatedAt = confirmedCalc.updatedAt;
+    fillSettings();
+    syncAutoQty();
+    renderMetrics();
+    renderTotals();
+  }
+
+  function scheduleSharedSettings() {
+    if (!isAdmin()) return;
+    window.clearTimeout(settingsTimer);
+    settingsTimer = window.setTimeout(function () {
+      settingsTimer = 0;
+      const payload = {
+        airKgPerCbm: settings.airKgPerCbm,
+        seaKgPerCbm: settings.seaKgPerCbm,
+        expressDivisor: settings.expressDivisor,
+        caiFactor: settings.caiFactor,
+        updatedAt: settings.updatedAt,
+      };
+      NG.api.put("/api/settings", payload).then(function (data) {
+        applySharedSettings(data);
+      }).catch(function (error) {
+        if (error.status === 409 && error.data && error.data.settings) {
+          applySharedSettings(error.data.settings);
+          fillSettings();
+          syncAutoQty();
+          renderMetrics();
+          renderTotals();
+          setStatus("計算設定剛剛被其他人改過，已改顯示最新的共用設定。");
+          return;
+        }
+        revertSharedSettings();
+        setStatus("計算設定沒有存到伺服器");
+      });
+    }, 400);
+  }
+
+  function showLegacyBanner() {
+    const banner = $("legacy-banner");
+    if (!banner) return;
+    const quotes = NG.storage.loadQuotes();
+    if (!quotes.length) {
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = false;
+    const text = $("legacy-banner-text");
+    if (text) {
+      text.textContent = "這台瀏覽器還有 " + quotes.length + " 筆舊報價，尚未進共用資料庫。請下載後交給管理員匯入。系統不會自動上傳。";
+    }
+  }
+
+  function paintGuard() {
+    if (canWrite()) return;
+    document.querySelectorAll("#panel-import input, #panel-import textarea, #panel-import select, #panel-import button, #panel-cargo input, #panel-cargo textarea, #panel-cargo select, #panel-cargo button, #panel-price input, #panel-price textarea, #panel-price select, #panel-price button, #panel-quote input, #panel-quote textarea, #panel-quote select, #panel-quote button").forEach(function (el) {
+      if (el.id === "print-quote" || el.id === "export-quote") return;
+      if (el.dataset && (el.dataset.step || el.dataset.stepNext)) return;
+      el.disabled = true;
+    });
+  }
+
+  function applyRole() {
+    const cost = canSeeCost();
+    const write = canWrite();
+    const admin = isAdmin();
+    document.body.dataset.role = roleName();
+    if ($("new-quote")) $("new-quote").hidden = !write;
+    if ($("save-quote")) $("save-quote").hidden = !write;
+    ["btn-word", "btn-excel", "btn-pdf", "parse-text"].forEach(function (id) {
+      if ($(id)) $(id).hidden = !write;
+    });
+    if ($("backup-import")) $("backup-import").hidden = !admin;
+    if ($("backup-export")) $("backup-export").hidden = !cost;
+    ["import", "price"].forEach(function (step) {
+      const button = document.querySelector('[data-step="' + step + '"]');
+      if (button) button.hidden = !cost;
+    });
+    const bar = document.querySelector(".markup-bar");
+    if (bar) bar.hidden = !cost;
+    if ($("reset-settings")) $("reset-settings").hidden = !admin;
+    ["set-air", "set-sea", "set-express", "set-cai"].forEach(function (id) {
+      if ($(id)) $(id).disabled = !admin;
+    });
+    if ($("quote-number")) $("quote-number").readOnly = true;
+    paintGuard();
+  }
+
   function downloadBackup(payload) {
     const name = backupFileName();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -1868,79 +2179,69 @@
     return name;
   }
 
-  function exportBackupFile() {
-    if (!flushDraft()) {
-      const message = "無法寫入目前草稿，沒有下載備份。";
+  async function exportBackupFile() {
+    if (!canSeeCost()) {
+      const message = "沒有權限，沒有下載備份。";
       showBackupMsg(message, true);
       setStatus(message);
       return "";
     }
+    flushDraft();
     try {
-      const name = downloadBackup(NG.storage.exportBackup());
-      const message = "已下載 " + name + "。檔案只在這台電腦，沒有上傳。";
+      const remote = await NG.api.get("/api/backups/export");
+      const prefs = NG.storage.loadPrefs();
+      const name = downloadBackup({
+        kind: "northgo-quote-backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        quotes: remote.quotes || [],
+        draft: NG.storage.loadDraft(),
+        settings: {
+          airKgPerCbm: remote.settings.airKgPerCbm,
+          seaKgPerCbm: remote.settings.seaKgPerCbm,
+          expressDivisor: remote.settings.expressDivisor,
+          caiFactor: remote.settings.caiFactor,
+          dimUnit: prefs.dimUnit,
+          weightUnit: prefs.weightUnit,
+          defaultCurrency: prefs.defaultCurrency,
+        },
+        seq: remote.seq || {},
+      });
+      const message = "已下載 " + name + "。這是共用資料庫的備份，檔案在這台電腦。";
       showBackupMsg(message, false);
       setStatus(message);
       return name;
     } catch (error) {
-      const message = "無法下載備份，沒有上傳。";
+      const message = "沒有下載備份。";
       showBackupMsg(message, true);
       setStatus(message);
       return "";
     }
   }
 
-  function syncAfterReplace() {
-    settings = NG.storage.loadSettings();
-    const draft = NG.storage.loadDraft();
-    excelSession = null;
-    $("btn-remap").hidden = true;
-    $("excel-map").hidden = true;
-    window.clearTimeout(draftTimer);
-    applyState(draft || blankState(), draft ? null : { skipDraft: true });
-    fillSettings();
-  }
-
-  function confirmBackupImport() {
-    const backup = pendingBackup;
-    const selected = document.querySelector('#backup-import-panel input[name="backup-mode"]:checked');
-    const mode = selected ? selected.value : "";
-    if (!backup || (mode !== "merge" && mode !== "replace")) return;
-    pendingBackup = null;
-    let insurance = "";
-    if (mode === "replace") {
-      if (!flushDraft()) {
-        pendingBackup = backup;
-        const message = "無法先匯出目前資料，已取消取代。沒有變更現有資料。";
-        showBackupMsg(message, true);
-        setStatus(message);
-        return;
-      }
-      try {
-        insurance = downloadBackup(NG.storage.exportBackup());
-      } catch (error) {
-        pendingBackup = backup;
-        const message = "無法先匯出目前資料，已取消取代。沒有變更現有資料。";
-        showBackupMsg(message, true);
-        setStatus(message);
-        return;
-      }
-    }
-    const result = NG.storage.applyBackup(backup, mode);
-    if (!result.ok) {
-      pendingBackup = backup;
-      const message = (insurance ? "已下載 " + insurance + "。" : "") + (result.error || "沒有變更現有資料。");
+  async function confirmBackupImport() {
+    if (!isAdmin()) {
+      const message = "沒有權限，沒有變更現有資料。";
       showBackupMsg(message, true);
       setStatus(message);
       return;
     }
-    $("backup-import-panel").hidden = true;
-    if (mode === "replace") syncAfterReplace();
-    renderHistory();
-    const message = mode === "replace"
-      ? "已先下載 " + insurance + "，並以備份檔取代。目前 " + result.count + " 筆報價。"
-      : "已合併備份。目前共 " + result.count + " 筆報價。";
-    showBackupMsg(message, false);
-    setStatus(message);
+    const backup = pendingBackup;
+    if (!backup) return;
+    pendingBackup = null;
+    try {
+      const result = await NG.api.post("/api/backups/import", { mode: "merge", backup: backup });
+      $("backup-import-panel").hidden = true;
+      renderHistory();
+      const message = "已合併備份。新增 " + result.inserted + "、更新 " + result.updated + "、略過 " + result.skipped + "。目前共 " + result.count + " 筆。";
+      showBackupMsg(message, false);
+      setStatus(message);
+    } catch (error) {
+      pendingBackup = backup;
+      const message = (error && error.message) || "沒有變更現有資料。";
+      showBackupMsg(message, true);
+      setStatus(message);
+    }
   }
 
   function openBackupFile(file) {
@@ -2047,17 +2348,29 @@
     $("apply-markup").addEventListener("click", applyMarkup);
     $("recalc-qty").addEventListener("click", recalcQty);
     $("reset-settings").addEventListener("click", function () {
-      const unit = settings.dimUnit === "inch" ? "inch" : "cm";
-      const weight = settings.weightUnit === "lb" ? "lb" : "kg";
-      const currency = settings.defaultCurrency || "USD";
-      settings = Object.assign({}, NG.config.defaults, { dimUnit: unit, weightUnit: weight, defaultCurrency: currency });
-      NG.storage.saveSettings(settings);
-      fillSettings();
-      syncAutoQty();
-      renderMetrics();
-      renderTotals();
-      scheduleDraft();
-      setStatus("已恢復計算預設值");
+      if (!isAdmin()) {
+        setStatus("沒有權限，計算設定沒有變更");
+        return;
+      }
+      NG.api.put("/api/settings", {
+        airKgPerCbm: NG.config.defaults.airKgPerCbm,
+        seaKgPerCbm: NG.config.defaults.seaKgPerCbm,
+        expressDivisor: NG.config.defaults.expressDivisor,
+        caiFactor: NG.config.defaults.caiFactor,
+        updatedAt: settings.updatedAt,
+      }).then(function (data) {
+        applySharedSettings(data);
+        fillSettings();
+        syncAutoQty();
+        renderMetrics();
+        renderTotals();
+        setStatus("已恢復全公司計算預設值");
+      }).catch(function (error) {
+        if (error.status === 409 && error.data && error.data.settings) applySharedSettings(error.data.settings);
+        else revertSharedSettings();
+        fillSettings();
+        setStatus("計算設定沒有存到伺服器");
+      });
     });
     $("default-currency").addEventListener("change", function (event) {
       const code = NG.parse.normalizeCurrency(event.target.value);
@@ -2069,6 +2382,10 @@
       $(id).addEventListener("input", onMeta);
     });
     $("show-twd").addEventListener("change", function (event) {
+      if (!canWrite()) {
+        event.target.checked = !!state.showTwdTotal;
+        return;
+      }
       state.showTwdTotal = event.target.checked;
       syncTwdEditor(true);
       updateTwdPrint();
@@ -2077,6 +2394,7 @@
     $("panel-quote").addEventListener("input", onQuoteEdit);
     $("panel-quote").addEventListener("change", onQuoteEdit);
     $("panel-quote").addEventListener("click", function (event) {
+      if (!canWrite()) return;
       const button = event.target.closest("[data-action]");
       if (!button || !button.closest("#quote-edit")) return;
       if (button.dataset.action === "add-quote-line") addQuoteLine();
@@ -2084,22 +2402,24 @@
     });
     $("save-quote").addEventListener("click", saveQuote);
     $("print-quote").addEventListener("click", function () {
-      ensureNumber();
-      fillQuoteForm();
-      renderQuoteBody();
-      updateTwdPrint();
-      setStep("quote");
-      window.print();
+      ensureNumber().then(function () {
+        fillQuoteForm();
+        renderQuoteBody();
+        updateTwdPrint();
+        setStep("quote");
+        window.print();
+      }).catch(function () {});
     });
     $("export-quote").addEventListener("click", function () {
-      try {
-        ensureNumber();
+      ensureNumber().then(function () {
         fillQuoteForm();
         NG.quoteDoc.exportXlsx(buildModel());
         setStatus("已匯出 Excel");
-      } catch (error) {
+      }).catch(function (error) {
+        if (error && error.status === 0) return;
+        if (!state.quoteNumber) return;
         setStatus("無法匯出：" + (error.message || error));
-      }
+      });
     });
     $("new-quote").addEventListener("click", newQuote);
     $("open-history").addEventListener("click", function () {
@@ -2123,14 +2443,33 @@
       hideBackupPanel();
       showBackupMsg("", false);
     });
-    $("history-q").addEventListener("input", renderHistory);
+    function queueHistory() {
+      window.clearTimeout(historyTimer);
+      historyTimer = window.setTimeout(renderHistory, 250);
+    }
+    $("history-q").addEventListener("input", queueHistory);
+    ["history-mode", "history-from", "history-to"].forEach(function (id) {
+      const el = $(id);
+      if (el) el.addEventListener("change", renderHistory);
+    });
+    const legacyButton = $("legacy-download");
+    if (legacyButton) {
+      legacyButton.addEventListener("click", function () {
+        try {
+          const name = downloadBackup(NG.storage.exportBackup());
+          setStatus("已下載 " + name + "。請交給管理員匯入，系統沒有自動上傳。");
+        } catch (error) {
+          setStatus("無法下載這台瀏覽器的舊報價");
+        }
+      });
+    }
     $("history-list").addEventListener("click", function (event) {
       const button = event.target.closest("[data-action]");
       if (!button) return;
       const id = button.dataset.id;
       if (button.dataset.action === "load-quote") loadQuote(id);
       if (button.dataset.action === "copy-quote") copyQuote(id);
-      if (button.dataset.action === "delete-quote") deleteQuote(id);
+      if (button.dataset.action === "delete-quote") deleteQuote(id, button.dataset.number);
     });
     $("btn-remap").addEventListener("click", openMapping);
     $("map-apply").addEventListener("click", applyMapping);
@@ -2138,6 +2477,7 @@
     document.body.addEventListener("click", function (event) {
       const button = event.target.closest("[data-action]");
       if (!button) return;
+      if (!canWrite()) return;
       if (button.dataset.action === "delete-item") {
         state.items = state.items.filter(function (item) { return item.id !== button.dataset.id; });
         renderVisibleItems();
@@ -2161,23 +2501,51 @@
       }
     });
     window.addEventListener("beforeprint", function () {
-      ensureNumber();
+      if (!String(state.quoteNumber || "").trim() && canWrite()) ensureNumber().catch(function () {});
       renderQuoteBody();
       updateTwdPrint();
       setStep("quote");
     });
+    document.addEventListener("click", function (event) {
+      if (canWrite()) return;
+      const button = event.target.closest("button, a");
+      if (!button) return;
+      if (button.id === "print-quote" || button.id === "export-quote" || button.id === "open-history" || button.id === "history-close" || button.id === "btn-logout" || button.id === "legacy-download") return;
+      if (button.dataset && button.dataset.action === "load-quote") return;
+      if (button.dataset && (button.dataset.step || button.dataset.stepNext)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
   }
 
-  function init() {
+  async function init() {
     const libsReady = !!(window.mammoth && window.XLSX);
-    settings = NG.storage.loadSettings();
+    const prefs = NG.storage.loadPrefs();
+    settings = Object.assign({}, NG.config.defaults, prefs);
+    settingsReady = false;
     state = normalizeState(blankState());
     fillSettings();
     fillCargoForm();
     fillQuoteForm();
     bind();
-    setStep("import", true);
+    showLegacyBanner();
+    applyRole();
+    try {
+      applySharedSettings(await NG.api.get("/api/settings"));
+      fillSettings();
+      renderMetrics();
+    } catch (error) {
+      settingsReady = false;
+      setStatus("讀不到計算設定，先不要儲存報價");
+    }
+    const pending = NG.storage.pendingDraft();
+    if (pending) {
+      applyState(pending, { skipDraft: true });
+      const note = "有一份尚未存到伺服器的報價，已恢復在畫面上。";
+      setStatus(settingsReady ? note : "讀不到計算設定，先不要儲存報價。" + note);
+    }
     renderMetrics();
+    setStep(canSeeCost() ? "import" : "quote", true);
     const paste = $("paste-text");
     if (paste) paste.value = "";
     window.addEventListener("pageshow", function (event) {
