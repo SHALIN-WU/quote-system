@@ -80,6 +80,60 @@
     return roleName() === "admin";
   }
 
+  let currentView = "new-quote";
+
+  function formatParam(value) {
+    const n = Number(value);
+    if (!isFinite(n)) return "—";
+    return String(n);
+  }
+
+  function renderCalcLine() {
+    const el = $("calc-line");
+    if (!el) return;
+    const frozen = state && cleanCalc(state.calcSettings);
+    if (!canSeeCost() || (!frozen && !settingsReady)) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    const calc = frozen || calcForQuote();
+    el.hidden = false;
+    el.textContent = "空運 " + formatParam(calc.airKgPerCbm) + "／海運 " + formatParam(calc.seaKgPerCbm) + "／快遞 " + formatParam(calc.expressDivisor) + "／才 " + formatParam(calc.caiFactor);
+  }
+
+  function showView(name) {
+    const views = {
+      "new-quote": "view-new",
+      history: "view-history",
+      calc: "view-settings",
+      backup: "view-backup",
+    };
+    if (!views[name]) return;
+    if ((name === "calc" || name === "backup") && !isAdmin()) {
+      setStatus("沒有權限");
+      return;
+    }
+    currentView = name;
+    Object.keys(views).forEach(function (key) {
+      const el = $(views[key]);
+      if (el) el.hidden = key !== name;
+    });
+    document.body.dataset.nav = name;
+    if (name === "history") renderHistory();
+    renderCalcLine();
+    if (typeof NG.refreshNav === "function") NG.refreshNav();
+    if (typeof NG.closeNav === "function") NG.closeNav();
+  }
+
+  function navHighlight() {
+    if (currentView === "new-quote" && state && state.id) return "history";
+    return currentView;
+  }
+
+  NG.showView = showView;
+  NG.navHighlight = navHighlight;
+
   function normalizeState(raw) {
     const blank = blankState();
     const source = raw || {};
@@ -657,6 +711,7 @@
     const imported = summary.cbmFromImport ? "合計 CBM 使用匯入的材積。" : "";
     const frozen = state && state.calcSettings ? "這張報價的材積重與計費重量使用存檔時的計算參數。" : "";
     $("metric-note").textContent = (summary.warning ? summary.warning + "。" : "") + imported + NG.cargo.formulaText(summary, calcForQuote()) + frozen;
+    renderCalcLine();
   }
 
   function renderTotals() {
@@ -1708,6 +1763,7 @@
     updateTwdPrint();
     if (!options || options.skipDraft !== true) scheduleDraft();
     if (!canWrite()) paintGuard();
+    if (typeof NG.refreshNav === "function") NG.refreshNav();
   }
 
   function saveFailure(error) {
@@ -1856,8 +1912,8 @@
     (next.items || []).forEach(function (item) { item.qtyManual = true; });
     applyState(next, { skipDraft: true });
     NG.storage.saveDraft(snapshot(), false);
+    showView("new-quote");
     setStep(canSeeCost() ? "price" : "quote", true);
-    $("history-dialog").close();
     setStatus("已載入 " + (next.quoteNumber || "") + "。數量先維持原報價。材積重與計費重量使用這張報價存檔時的計算參數。");
   }
 
@@ -1891,8 +1947,8 @@
     }
     applyState(next, { skipDraft: true });
     scheduleDraft();
+    showView("new-quote");
     setStep("price", true);
-    $("history-dialog").close();
     try {
       await ensureNumber();
     } catch (error) {
@@ -1959,11 +2015,11 @@
 
   function emptyQuoteControls() {
     document.querySelectorAll("textarea").forEach(function (el) {
-      if (el.closest("#history-dialog")) return;
+      if (el.closest("#view-history") || el.closest("#view-backup") || el.closest("#view-settings")) return;
       el.value = "";
     });
     document.querySelectorAll("input").forEach(function (el) {
-      if (el.closest("#history-dialog") || el.closest("#backup-import-panel")) return;
+      if (el.closest("#view-history") || el.closest("#view-backup") || el.closest("#view-settings")) return;
       if (el.dataset && el.dataset.setting) return;
       if (el.id === "default-currency" || el.id === "fees-only" || el.id === "history-q") return;
       if (el.type === "file") {
@@ -2001,6 +2057,7 @@
       NG.storage.clearDraft();
     }
     setStatus("已開始新報價");
+    showView("new-quote");
   }
 
   function onRateInput(event) {
@@ -2144,6 +2201,7 @@
     const write = canWrite();
     const admin = isAdmin();
     document.body.dataset.role = roleName();
+    renderCalcLine();
     if ($("new-quote")) $("new-quote").hidden = !write;
     if ($("save-quote")) $("save-quote").hidden = !write;
     ["btn-word", "btn-excel", "btn-pdf", "parse-text"].forEach(function (id) {
@@ -2345,6 +2403,11 @@
     });
     $("panel-cargo").addEventListener("input", onCargoEdit);
     $("panel-cargo").addEventListener("change", onCargoEdit);
+    const settingsView = $("view-settings");
+    if (settingsView) {
+      settingsView.addEventListener("input", onCargoEdit);
+      settingsView.addEventListener("change", onCargoEdit);
+    }
     $("apply-markup").addEventListener("click", applyMarkup);
     $("recalc-qty").addEventListener("click", recalcQty);
     $("reset-settings").addEventListener("click", function () {
@@ -2422,14 +2485,6 @@
       });
     });
     $("new-quote").addEventListener("click", newQuote);
-    $("open-history").addEventListener("click", function () {
-      showBackupMsg("", false);
-      hideBackupPanel();
-      renderHistory();
-      $("history-dialog").showModal();
-    });
-    $("history-close").addEventListener("click", function () { $("history-dialog").close(); });
-    $("history-dialog").addEventListener("close", hideBackupPanel);
     $("backup-export").addEventListener("click", exportBackupFile);
     $("backup-import").addEventListener("click", function () { $("backup-file").click(); });
     $("backup-file").addEventListener("change", function (event) {
@@ -2501,16 +2556,23 @@
       }
     });
     window.addEventListener("beforeprint", function () {
+      document.body.dataset.printReturn = currentView;
+      showView("new-quote");
       if (!String(state.quoteNumber || "").trim() && canWrite()) ensureNumber().catch(function () {});
       renderQuoteBody();
       updateTwdPrint();
       setStep("quote");
     });
+    window.addEventListener("afterprint", function () {
+      const back = document.body.dataset.printReturn;
+      if (back && back !== currentView) showView(back);
+    });
     document.addEventListener("click", function (event) {
       if (canWrite()) return;
       const button = event.target.closest("button, a");
       if (!button) return;
-      if (button.id === "print-quote" || button.id === "export-quote" || button.id === "open-history" || button.id === "history-close" || button.id === "btn-logout" || button.id === "legacy-download") return;
+      if (button.closest("#sidenav") || button.id === "nav-open" || button.id === "nav-close") return;
+      if (button.id === "print-quote" || button.id === "export-quote" || button.id === "btn-logout" || button.id === "legacy-download") return;
       if (button.dataset && button.dataset.action === "load-quote") return;
       if (button.dataset && (button.dataset.step || button.dataset.stepNext)) return;
       event.preventDefault();
@@ -2546,6 +2608,14 @@
     }
     renderMetrics();
     setStep(canSeeCost() ? "import" : "quote", true);
+    const opening = new URLSearchParams(location.search);
+    const requested = opening.get("nav");
+    let view = canWrite() ? "new-quote" : "history";
+    if (requested === "history") view = "history";
+    if (requested === "new-quote" && canWrite()) view = "new-quote";
+    if ((requested === "calc" || requested === "backup") && isAdmin()) view = requested;
+    showView(view);
+    if (requested) history.replaceState(null, "", location.pathname);
     const paste = $("paste-text");
     if (paste) paste.value = "";
     window.addEventListener("pageshow", function (event) {
@@ -2559,7 +2629,8 @@
         clearImportArtifacts();
         emptyQuoteControls();
         applyState(blankState(), { skipDraft: true });
-        setStep("import", true);
+        setStep(canSeeCost() ? "import" : "quote", true);
+        showView(canWrite() ? "new-quote" : "history");
       } finally {
         suppressDraft = false;
         stopDraft();

@@ -126,6 +126,13 @@
       .catch(function () {})
       .then(function () { location.href = "/login"; });
   });
+  fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" })
+    .then(function (res) { return res.ok ? res.json() : null; })
+    .then(function (user) {
+      var name = document.getElementById("current-user");
+      if (name && user) name.textContent = user.displayName || user.username || "";
+    })
+    .catch(function () {});
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
