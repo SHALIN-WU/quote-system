@@ -1,6 +1,12 @@
 import { hashPassword } from "./password.js";
 
-export const ROLES = ["admin", "sales", "viewer"];
+// 角色權限定案，給第二期用。這一期只限制帳號管理（非 admin 不能進），
+// 還沒有把客服改成只能看報價，也還沒有隱藏成本與利潤。
+// 第二期報價改存 D1 時，由後端 API 對 service 拿掉成本與利潤欄位，並限制客服不能新增或修改報價。
+// - admin 管理員：全部功能，包含成本、利潤、帳號管理
+// - sales 業務：可以報價，可以看到成本與利潤，不能管理帳號
+// - service 客服：只能看報價（不能新增或修改），不能看到成本與利潤，不能管理帳號
+export const ROLES = ["admin", "sales", "service"];
 
 function fail(message) {
   const error = new Error(message);

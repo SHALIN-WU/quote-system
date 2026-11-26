@@ -29,11 +29,8 @@ if (-not (Test-Path -LiteralPath (Join-Path $root "node_modules\wrangler"))) {
 }
 
 Write-Host "建立本機資料表…"
-$migrationFiles = Get-ChildItem -LiteralPath (Join-Path $root "migrations") -Filter "*.sql" | Sort-Object Name
-foreach ($migration in $migrationFiles) {
-  & $npx wrangler d1 execute quote-admin --local --file="./migrations/$($migration.Name)"
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-}
+& $npx wrangler d1 migrations apply quote-admin --local -y
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $vars = Join-Path $root ".dev.vars"
 if (-not (Test-Path -LiteralPath $vars)) {

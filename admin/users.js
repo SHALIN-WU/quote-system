@@ -1,5 +1,5 @@
 (function () {
-  var ROLE_LABELS = { admin: "管理員", sales: "業務", viewer: "查看者" };
+  var ROLE_LABELS = { admin: "管理員", sales: "業務", service: "客服" };
   var state = { me: null, items: [], mode: "create", editing: null };
 
   var rows = document.getElementById("user-rows");
