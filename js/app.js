@@ -46,6 +46,8 @@
       markupPercent: "",
       showTwdTotal: false,
       showZeroLines: false,
+      direction: "",
+      taxRate: 0.05,
       rates: {},
       calcSettings: null,
       createdAt: null,
@@ -193,6 +195,12 @@
       markupPercent: source.markupPercent || "",
       showTwdTotal: !!source.showTwdTotal,
       showZeroLines: !!source.showZeroLines,
+      direction: source.direction === "import" || source.direction === "export" ? source.direction : "",
+      taxRate: (function () {
+        if (source.taxRate == null || source.taxRate === "") return source.id ? 0 : 0.05;
+        const n = Number(source.taxRate);
+        return isFinite(n) && n >= 0 && n <= 1 ? n : 0;
+      })(),
       rates: source.rates || {},
       calcSettings: cleanCalc(source.calcSettings),
       createdAt: source.createdAt || null,
@@ -214,6 +222,8 @@
       markupPercent: state.markupPercent,
       showTwdTotal: state.showTwdTotal,
       showZeroLines: !!state.showZeroLines,
+      direction: state.direction === "import" || state.direction === "export" ? state.direction : "",
+      taxRate: state.taxRate,
       rates: state.rates,
       calcSettings: state.calcSettings || null,
       createdAt: state.createdAt,
@@ -645,6 +655,16 @@
     paintGuard();
   }
 
+  function paintDirection() {
+    ["import", "export"].forEach(function (name) {
+      const button = $("direction-" + name);
+      if (!button) return;
+      const on = state.direction === name;
+      button.classList.toggle("is-active", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
   function paintMode() {
     const fcl = state.cargo.mode === "fcl";
     if (fcl && !state.cargo.containers.length) state.cargo.containers.push(blankContainer());
@@ -657,6 +677,7 @@
     paintWeightUnit();
     $("total-pieces").value = state.cargo.pieces;
     $("ship-mode").value = state.cargo.mode || "air";
+    paintDirection();
     $("container-count").value = state.cargo.containerCount;
     paintMode();
     renderContainers();
@@ -768,10 +789,46 @@
     });
   }
 
+  function formatByCurrency(currency, value) {
+    if (value == null || !isFinite(Number(value))) return "—";
+    return currency === "TWD" ? NG.formatInteger(value) : NG.formatMoney(value);
+  }
+
+  function currencyCaption(currency) {
+    return currency === "未指定" ? "未指定　請確認幣別" : currency;
+  }
+
+  function lineSubtotalText(item) {
+    const totals = NG.pricing.lineTotals(item);
+    if (totals.quote == null) return "—";
+    const currency = NG.parse.currencyKey(item.currency);
+    if (currency === "TWD") return NG.formatInteger(NG.pricing.roundMoney(totals.quote, 0));
+    return NG.formatMoney(totals.quote);
+  }
+
+  function appendTotalRows(dl, groups) {
+    groups.forEach(function (group) {
+      const caption = currencyCaption(group.currency);
+      const subtotal = group.subtotal != null ? group.subtotal : group.quote;
+      const rows = group.taxed
+        ? [[caption + " 未稅小計", subtotal], [caption + " 營業稅 5%", group.tax], [caption + " 含稅總計", group.total]]
+        : [[caption, subtotal]];
+      rows.forEach(function (row) {
+        const div = document.createElement("div");
+        const dt = document.createElement("dt");
+        dt.textContent = row[0];
+        const dd = document.createElement("dd");
+        dd.textContent = formatByCurrency(group.currency, row[1]);
+        div.append(dt, dd);
+        dl.appendChild(div);
+      });
+    });
+  }
+
   function buildModel() {
     const summary = currentSummary();
     const visible = quoteItems();
-    const groups = NG.pricing.groupByCurrency(visible);
+    const groups = NG.pricing.displayTotals(visible, { taxRate: state.taxRate, direction: state.direction });
     return {
       companyName: NG.config.companyName,
       quoteNumber: state.quoteNumber,
@@ -796,15 +853,13 @@
           qty: totals.qty,
           price: item.quotePrice === "" ? null : NG.num(item.quotePrice),
           currency: NG.parse.currencyKey(item.currency),
-          subtotal: totals.quote,
+          subtotal: totals.quote == null ? null : (NG.parse.currencyKey(item.currency) === "TWD" ? NG.pricing.roundMoney(totals.quote, 0) : totals.quote),
           minCharge: NG.num(item.minCharge) > 0 ? NG.num(item.minCharge) : null,
         };
       }),
-      groups: groups.map(function (group) {
-        return { currency: group.currency, quote: group.quote };
-      }),
+      groups: groups,
       showTwd: !!state.showTwdTotal,
-      twd: NG.pricing.twdEquivalent(groups, state.rates),
+      twd: NG.pricing.twdEquivalent(groups, state.rates, { taxRate: state.taxRate }),
     };
   }
 
@@ -855,7 +910,7 @@
     const sub = document.createElement("td");
     sub.className = "num";
     sub.dataset.out = "subtotal";
-    sub.textContent = NG.formatMoney(NG.pricing.lineTotals(item).quote);
+    sub.textContent = lineSubtotalText(item);
     tr.appendChild(sub);
     const action = document.createElement("td");
     action.appendChild(deleteButton("delete-quote-line", item.id));
@@ -941,15 +996,7 @@
     });
     const node = document.createElement(model.groups.length ? "dl" : "p");
     if (!model.groups.length) node.textContent = "—";
-    model.groups.forEach(function (group) {
-      const div = document.createElement("div");
-      const dt = document.createElement("dt");
-      dt.textContent = group.currency;
-      const dd = document.createElement("dd");
-      dd.textContent = NG.formatMoney(group.quote);
-      div.append(dt, dd);
-      node.appendChild(div);
-    });
+    appendTotalRows(node, model.groups);
     if (note) section.insertBefore(node, note);
     else section.appendChild(node);
   }
@@ -964,7 +1011,7 @@
       return;
     }
     const cell = tr && tr.querySelector('[data-out="subtotal"]');
-    if (cell) cell.textContent = NG.formatMoney(NG.pricing.lineTotals(item).quote);
+    if (cell) cell.textContent = lineSubtotalText(item);
     refreshQuoteTotals();
     renderTotals();
     syncTwdEditor(true);
@@ -1121,18 +1168,16 @@
     list.className = "twd-lines";
     model.twd.lines.forEach(function (line) {
       const item = document.createElement("li");
-      if (line.rate == null) item.textContent = line.currency + " " + NG.formatMoney(line.quote) + "：尚未填匯率";
-      else if (line.currency === "TWD") item.textContent = "TWD " + NG.formatMoney(line.quote) + " × 1 = " + NG.formatInteger(line.twd);
-      else item.textContent = line.currency + " " + NG.formatMoney(line.quote) + " × " + line.rate + " = " + NG.formatInteger(line.twd);
+      item.textContent = NG.pricing.twdLineParts(line).text;
       list.appendChild(item);
     });
     host.appendChild(list);
-    const sum = document.createElement("p");
-    sum.className = "twd-sum";
-    sum.textContent = model.twd.missing
-      ? "尚有幣別未填匯率或未指定幣別，無法計算約當台幣合計。"
-      : "約當台幣合計　TWD " + NG.formatInteger(model.twd.sum);
-    host.appendChild(sum);
+    NG.pricing.twdTotalParts(model).forEach(function (row) {
+      const sum = document.createElement("p");
+      sum.className = row.emphasis ? "twd-sum" : "twd-part";
+      sum.textContent = row.text;
+      host.appendChild(sum);
+    });
   }
 
   function applyAutoQty(item, tr) {
@@ -1776,6 +1821,10 @@
       setStatus("沒有權限，沒有存到伺服器。畫面上的內容還在。");
       return;
     }
+    if (error && error.status === 400) {
+      setStatus(error.message || "沒有存到伺服器，這筆還在這台電腦");
+      return;
+    }
     setStatus("沒有存到伺服器，這筆還在這台電腦");
   }
 
@@ -1786,6 +1835,11 @@
     }
     if (!settingsReady && !(state && state.calcSettings)) {
       setStatus("讀不到計算設定，先不要儲存報價");
+      return;
+    }
+    const needsDirection = !(state.id && Number(state.taxRate) === 0);
+    if (needsDirection && state.direction !== "import" && state.direction !== "export") {
+      setStatus("請選擇進口或出口");
       return;
     }
     stopDraft();
@@ -1813,7 +1867,12 @@
     const groups = quote.sellingTotals || [];
     if (!groups.length) return "沒有費用項目";
     return groups.map(function (group) {
-      return group.currency + " " + NG.formatMoney(group.quote);
+      const caption = currencyCaption(group.currency);
+      const subtotal = group.subtotal != null ? group.subtotal : group.quote;
+      if (!group.taxed) return caption + " " + formatByCurrency(group.currency, subtotal);
+      return caption + " 未稅 " + formatByCurrency(group.currency, subtotal)
+        + "、營業稅 " + formatByCurrency(group.currency, group.tax)
+        + "、含稅 " + formatByCurrency(group.currency, group.total);
     }).join("、");
   }
 
@@ -1880,6 +1939,8 @@
       title.textContent = quote.quoteNumber || "（無單號）";
       const meta = document.createElement("p");
       meta.textContent = (quote.customerName || "未填客戶") + "　" + (quote.quoteDate || "") + "　" + NG.modeLabel(quote.mode);
+      const flow = document.createElement("p");
+      flow.textContent = "進出口　" + (quote.direction === "import" ? "進口" : quote.direction === "export" ? "出口" : "—");
       const who = document.createElement("p");
       const created = quote.createdBy && quote.createdBy.displayName ? quote.createdBy.displayName : "未知使用者";
       const updated = quote.updatedBy && quote.updatedBy.displayName ? quote.updatedBy.displayName : created;
@@ -1889,7 +1950,7 @@
       const actions = document.createElement("div");
       actions.className = "row-actions";
       historyButtons(quote).forEach(function (button) { actions.appendChild(button); });
-      card.append(title, meta, who, money, actions);
+      card.append(title, meta, flow, who, money, actions);
       host.appendChild(card);
     });
     if (data.limit && quotes.length >= data.limit) {
@@ -1934,6 +1995,8 @@
     next.createdAt = null;
     next.updatedAt = null;
     next.calcSettings = null;
+    next.direction = "";
+    next.taxRate = 0.05;
     next.quoteDate = NG.todayISO();
     next.validUntil = NG.addDays(next.quoteDate, 14);
     next.quoteNumber = "";
@@ -1955,7 +2018,7 @@
       setStatus("已複製內容，但沒有取得新單號。畫面上的內容還在，尚未存到伺服器。");
       return;
     }
-    setStatus("已複製成新單 " + state.quoteNumber + "，尚未儲存。計算參數用現在的共用設定。");
+    setStatus("已複製成新單 " + state.quoteNumber + "，尚未儲存。請選擇進口或出口。計算參數用現在的共用設定。");
   }
 
   async function deleteQuote(id, quoteNumber) {
@@ -2395,6 +2458,15 @@
     $("import-body").addEventListener("change", onItemEdit);
     $("price-body").addEventListener("input", onItemEdit);
     $("price-body").addEventListener("change", onItemEdit);
+    document.querySelectorAll("[data-direction]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (!canWrite()) return;
+        const next = button.dataset.direction === "export" ? "export" : "import";
+        state.direction = next;
+        paintDirection();
+        scheduleDraft();
+      });
+    });
     document.querySelectorAll("[data-weight-unit]").forEach(function (button) {
       button.addEventListener("click", function () { setWeightUnit(button.dataset.weightUnit); });
     });

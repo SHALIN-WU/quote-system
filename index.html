@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>物流報價系統</title>
   <!--
-    快取版本 ASSET_VERSION：20261126e
+    快取版本 ASSET_VERSION：20261126g
     之後每次改 js/ 或 css/，要記得把這個版本號改掉，
     並把本檔 css 與所有 js/ 的 ?v= 改成同一個值。libs/ 與外部網址不要加。
   -->
-  <link rel="stylesheet" href="css/styles.css?v=20261126e">
+  <link rel="stylesheet" href="css/styles.css?v=20261126g">
   <script>
     document.documentElement.classList.add("auth-locked");
   </script>
@@ -205,6 +205,13 @@
             <option value="express">快遞</option>
           </select>
         </label>
+        <div class="direction-field">
+          <span>進出口</span>
+          <div class="unit-switch" role="group" aria-label="進出口">
+            <button type="button" id="direction-import" data-direction="import" aria-pressed="false">進口</button>
+            <button type="button" id="direction-export" data-direction="export" aria-pressed="false">出口</button>
+          </div>
+        </div>
         <label id="container-field">櫃數
           <input id="container-count" data-field="containerCount" type="number" step="any" min="0" inputmode="decimal" autocomplete="off">
           <span class="hint">每櫃的數量用這裡。</span>
@@ -458,19 +465,19 @@
   <script src="libs/xlsx.full.min.js"></script>
   <script src="libs/pdf.min.js"></script>
   <!-- 以下 ?v= 須與 head 的快取版本 ASSET_VERSION 相同 -->
-  <script src="js/config.js?v=20261126e"></script>
-  <script src="js/storage.js?v=20261126e"></script>
-  <script src="js/api.js?v=20261126e"></script>
-  <script src="js/parse.js?v=20261126e"></script>
-  <script src="js/import-word.js?v=20261126e"></script>
-  <script src="js/import-excel.js?v=20261126e"></script>
-  <script src="js/import-pdf.js?v=20261126e"></script>
-  <script src="js/cargo.js?v=20261126e"></script>
-  <script src="js/pricing.js?v=20261126e"></script>
-  <script src="js/quote-doc.js?v=20261126e"></script>
-  <script src="js/history.js?v=20261126e"></script>
-  <script src="js/app.js?v=20261126e"></script>
-  <script src="js/nav.js?v=20261126e"></script>
-  <script src="js/auth.js?v=20261126e"></script>
+  <script src="js/config.js?v=20261126g"></script>
+  <script src="js/storage.js?v=20261126g"></script>
+  <script src="js/api.js?v=20261126g"></script>
+  <script src="js/parse.js?v=20261126g"></script>
+  <script src="js/import-word.js?v=20261126g"></script>
+  <script src="js/import-excel.js?v=20261126g"></script>
+  <script src="js/import-pdf.js?v=20261126g"></script>
+  <script src="js/cargo.js?v=20261126g"></script>
+  <script src="js/pricing.js?v=20261126g"></script>
+  <script src="js/quote-doc.js?v=20261126g"></script>
+  <script src="js/history.js?v=20261126g"></script>
+  <script src="js/app.js?v=20261126g"></script>
+  <script src="js/nav.js?v=20261126g"></script>
+  <script src="js/auth.js?v=20261126g"></script>
 </body>
 </html>

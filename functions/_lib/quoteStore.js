@@ -1,4 +1,4 @@
-import { sellingTotals } from "./quoteMoney.js";
+import { displayTotals } from "./quoteMoney.js";
 
 const MODES = ["air", "lcl", "fcl", "express"];
 const CALC_KEYS = ["airKgPerCbm", "seaKgPerCbm", "expressDivisor", "caiFactor"];
@@ -188,6 +188,36 @@ function cleanItems(items) {
   });
 }
 
+function cleanDirection(value) {
+  return value === "import" || value === "export" ? value : "";
+}
+
+function cleanTaxRate(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 1) return 0;
+  return Math.round((n + Number.EPSILON) * 10000) / 10000;
+}
+
+function customerItems(doc) {
+  const showZero = !!(doc && doc.showZeroLines);
+  return ((doc && doc.items) || []).filter((item) => {
+    if (!item || item.hideFromQuote) return false;
+    if (!showZero && item.qty !== "" && item.qty != null && num(item.qty) === 0) return false;
+    return true;
+  });
+}
+
+function presentedTotals(row) {
+  try {
+    const doc = JSON.parse(row.document || "{}");
+    const taxRate = row.tax_rate != null && row.tax_rate !== "" ? row.tax_rate : doc.taxRate;
+    const direction = row.direction || doc.direction || "";
+    return displayTotals(customerItems(doc), { taxRate: cleanTaxRate(taxRate), direction: cleanDirection(direction) });
+  } catch {
+    return JSON.parse(row.selling_totals || "[]");
+  }
+}
+
 function cleanRates(value) {
   const out = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return out;
@@ -215,6 +245,8 @@ function buildDocument(input, fixed) {
     showTwdTotal: !!source.showTwdTotal,
     showZeroLines: !!source.showZeroLines,
     rates: cleanRates(source.rates),
+    direction: cleanDirection(source.direction),
+    taxRate: cleanTaxRate(source.taxRate),
     calcSettings: fixed.calcSettings,
     createdAt: fixed.createdAt,
     updatedAt: fixed.updatedAt
@@ -247,6 +279,8 @@ function stripDocument(doc) {
     })),
     showTwdTotal: doc.showTwdTotal,
     showZeroLines: doc.showZeroLines,
+    direction: cleanDirection(doc.direction),
+    taxRate: cleanTaxRate(doc.taxRate),
     rates: doc.rates,
     calcSettings: doc.calcSettings,
     createdAt: doc.createdAt,
@@ -276,7 +310,9 @@ function present(row, names, role, withDocument) {
     validUntil: row.valid_until,
     mode: row.mode,
     route: row.route,
-    sellingTotals: JSON.parse(row.selling_totals || "[]"),
+    direction: cleanDirection(row.direction),
+    taxRate: cleanTaxRate(row.tax_rate),
+    sellingTotals: presentedTotals(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     createdBy: actor(row.created_by, names),
@@ -319,7 +355,7 @@ export async function listQuotes(db, query) {
   }
   if (query.dateFrom && query.dateTo && query.dateFrom > query.dateTo) fail("起日不能晚於迄日");
   const sql = `SELECT id, quote_number, customer_name, quote_date, valid_until, mode, route,
-      selling_totals, created_at, created_by, updated_at, updated_by
+      direction, tax_rate, document, selling_totals, created_at, created_by, updated_at, updated_by
     FROM quotes ${where.length ? "WHERE " + where.join(" AND ") : ""}
     ORDER BY updated_at DESC, quote_number DESC
     LIMIT ${LIST_LIMIT}`;
@@ -372,12 +408,14 @@ export async function createQuote(db, user, input) {
     createdAt: now,
     updatedAt: now
   });
-  const totals = JSON.stringify(sellingTotals(document.items));
+  if (!document.direction) fail("請選擇進口或出口");
+  document.taxRate = 0.05;
+  const totals = JSON.stringify(displayTotals(customerItems(document), document));
   try {
     await db.prepare(`INSERT INTO quotes (
-      id, quote_number, customer_name, quote_date, valid_until, mode, route, document, selling_totals,
+      id, quote_number, customer_name, quote_date, valid_until, mode, route, direction, tax_rate, document, selling_totals,
       created_at, created_by, updated_at, updated_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       id,
       quoteNumber,
       document.customerName,
@@ -385,6 +423,8 @@ export async function createQuote(db, user, input) {
       document.validUntil,
       document.cargo.mode,
       document.route,
+      document.direction,
+      document.taxRate,
       JSON.stringify(document),
       totals,
       now,
@@ -428,9 +468,11 @@ export async function updateQuote(db, user, id, input, updatedAt) {
     createdAt: current.created_at,
     updatedAt: now
   });
-  const totals = JSON.stringify(sellingTotals(document.items));
+  document.taxRate = cleanTaxRate(current.tax_rate);
+  if (document.taxRate > 0 && !document.direction) fail("請選擇進口或出口");
+  const totals = JSON.stringify(displayTotals(customerItems(document), document));
   const result = await db.prepare(`UPDATE quotes SET
-      customer_name = ?, quote_date = ?, valid_until = ?, mode = ?, route = ?, document = ?, selling_totals = ?,
+      customer_name = ?, quote_date = ?, valid_until = ?, mode = ?, route = ?, direction = ?, tax_rate = ?, document = ?, selling_totals = ?,
       updated_at = ?, updated_by = ?
     WHERE id = ? AND updated_at = ?`).bind(
     document.customerName,
@@ -438,6 +480,8 @@ export async function updateQuote(db, user, id, input, updatedAt) {
     document.validUntil,
     document.cargo.mode,
     document.route,
+    document.direction || null,
+    document.taxRate,
     JSON.stringify(document),
     totals,
     now,
@@ -576,10 +620,10 @@ export async function importBackup(db, user, payload) {
       createdAt,
       updatedAt
     });
-    const totals = JSON.stringify(sellingTotals(document.items));
+    const totals = JSON.stringify(displayTotals(customerItems(document), document));
     if (current) {
       statements.push(db.prepare(`UPDATE quotes SET
-        customer_name = ?, quote_date = ?, valid_until = ?, mode = ?, route = ?, document = ?, selling_totals = ?,
+        customer_name = ?, quote_date = ?, valid_until = ?, mode = ?, route = ?, direction = ?, tax_rate = ?, document = ?, selling_totals = ?,
         created_at = ?, created_by = ?, updated_at = ?, updated_by = ?
         WHERE id = ?`).bind(
         document.customerName,
@@ -587,6 +631,8 @@ export async function importBackup(db, user, payload) {
         document.validUntil,
         document.cargo.mode,
         document.route,
+        document.direction || null,
+        document.taxRate,
         JSON.stringify(document),
         totals,
         createdAt,
@@ -603,9 +649,9 @@ export async function importBackup(db, user, payload) {
       }
       usedNumbers.add(quoteNumber);
       statements.push(db.prepare(`INSERT INTO quotes (
-        id, quote_number, customer_name, quote_date, valid_until, mode, route, document, selling_totals,
+        id, quote_number, customer_name, quote_date, valid_until, mode, route, direction, tax_rate, document, selling_totals,
         created_at, created_by, updated_at, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         id,
         quoteNumber,
         document.customerName,
@@ -613,6 +659,8 @@ export async function importBackup(db, user, payload) {
         document.validUntil,
         document.cargo.mode,
         document.route,
+        document.direction || null,
+        document.taxRate,
         JSON.stringify(document),
         totals,
         createdAt,

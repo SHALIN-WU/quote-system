@@ -124,7 +124,7 @@ label { display: grid; gap: 4px; font-size: 14px; }
 select[data-field="unit"] { min-width: 148px; }
 .unit-cell select[hidden] { display: none !important; }
 .dim-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.weight-field { display: grid; gap: 4px; align-content: start; font-size: 14px; }
+.weight-field, .direction-field { display: grid; gap: 4px; align-content: start; font-size: 14px; }
 .weight-field .hint { margin: 0; }
 .unit-switch { display: inline-flex; border: 1px solid var(--navy); border-radius: 4px; overflow: hidden; }
 .unit-switch button {
@@ -247,6 +247,7 @@ pre {
 #quote-sheet .q-totals dl div { display: contents; background: none; border: 0; padding: 0; }
 #quote-sheet .q-totals dt, #quote-sheet .q-totals dd { margin: 0; font-size: 12px; font-weight: 650; }
 #quote-sheet .q-totals dt { color: var(--muted); }
+.q-warn { font-weight: 500; }
 #quote-sheet .q-totals dd { text-align: right; }
 .q-print-lines { display: none; }
 #quote-edit .check { margin: 2px 0 6px; font-size: 12px; }
@@ -282,7 +283,8 @@ body[data-role="service"] :is(#panel-import, #panel-cargo, #panel-price, #panel-
 }
 #twd-editor { display: block; margin-top: 8px; }
 .twd-lines { margin: 8px 0; padding-left: 18px; }
-.twd-sum { font-size: 20px; font-weight: 700; }
+.twd-part { margin: 0; font-size: 14px; font-weight: 650; }
+.twd-sum { margin: 6px 0 0; font-size: 20px; font-weight: 700; }
 
 dialog {
   width: min(720px, calc(100% - 24px));

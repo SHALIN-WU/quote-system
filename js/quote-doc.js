@@ -67,10 +67,24 @@
         "</td><td class=\"num\">" + NG.esc(qtyText(line)) +
         "</td><td class=\"num\">" + NG.esc(line.price == null ? "—" : NG.formatMoney(line.price)) +
         "</td><td>" + NG.esc(line.currency) +
-        "</td><td class=\"num\">" + NG.esc(NG.formatMoney(line.subtotal)) + "</td></tr>";
+        "</td><td class=\"num\">" + NG.esc(line.currency === "TWD" ? NG.formatInteger(line.subtotal) : NG.formatMoney(line.subtotal)) + "</td></tr>";
     }).join("");
+    function amountText(currency, value) {
+      if (value == null || !isFinite(Number(value))) return "—";
+      return currency === "TWD" ? NG.formatInteger(value) : NG.formatMoney(value);
+    }
+    function caption(currency) {
+      return currency === "未指定" ? "未指定　請確認幣別" : currency;
+    }
     const totals = model.groups.map(function (group) {
-      return "<div><dt>" + NG.esc(group.currency) + "</dt><dd>" + NG.esc(NG.formatMoney(group.quote)) + "</dd></div>";
+      const title = caption(group.currency);
+      const subtotal = group.subtotal != null ? group.subtotal : group.quote;
+      if (!group.taxed) {
+        return "<div><dt>" + NG.esc(title) + "</dt><dd>" + NG.esc(amountText(group.currency, subtotal)) + "</dd></div>";
+      }
+      return "<div><dt>" + NG.esc(title) + " 未稅小計</dt><dd>" + NG.esc(amountText(group.currency, subtotal)) + "</dd></div>"
+        + "<div><dt>" + NG.esc(title) + " 營業稅 5%</dt><dd>" + NG.esc(amountText(group.currency, group.tax)) + "</dd></div>"
+        + "<div><dt>" + NG.esc(title) + " 含稅總計</dt><dd>" + NG.esc(amountText(group.currency, group.total)) + "</dd></div>";
     }).join("");
     return ""
       + "<header class=\"q-head\">"
@@ -101,10 +115,14 @@
     return value;
   }
 
-  function rememberMoney(marks, rowIndex, values, columns) {
+  function rememberMoney(marks, rowIndex, values, columns, formats) {
     columns.forEach(function (column) {
-      if (typeof values[column] === "number") marks.push({ r: rowIndex, c: column });
+      if (typeof values[column] === "number") marks.push({ r: rowIndex, c: column, z: formats && formats[column] });
     });
+  }
+
+  function moneyFormat(currency) {
+    return currency === "TWD" ? "#,##0" : "#,##0.00";
   }
 
   function exportXlsx(model) {
@@ -141,37 +159,49 @@
         line.currency,
         line.subtotal == null ? "" : line.subtotal,
       ];
-      rememberMoney(moneyCells, rows.length, values, [3, 5]);
+      rememberMoney(moneyCells, rows.length, values, [3, 5], { 5: moneyFormat(line.currency) });
       if (model.mode === "air" && line.unit === "Per KG" && typeof values[2] === "number") {
         measureCells.push({ r: rows.length, c: 2 });
       }
       rows.push(values);
     });
     rows.push([]);
-    rows.push(["幣別", "報價合計"]);
+    rows.push(["幣別", "金額"]);
     model.groups.forEach(function (group) {
-      const values = [group.currency, group.quote];
-      rememberMoney(moneyCells, rows.length, values, [1]);
-      rows.push(values);
+      const title = group.currency === "未指定" ? "未指定　請確認幣別" : group.currency;
+      const subtotal = group.subtotal != null ? group.subtotal : group.quote;
+      const lines = group.taxed
+        ? [[title + " 未稅小計", subtotal], [title + " 營業稅 5%", group.tax], [title + " 含稅總計", group.total]]
+        : [[title, subtotal]];
+      lines.forEach(function (line) {
+        rememberMoney(moneyCells, rows.length, line, [1], { 1: moneyFormat(group.currency) });
+        rows.push(line);
+      });
     });
     const twdRows = [];
     if (model.showTwd) {
       rows.push([]);
-      rows.push(["約當台幣合計（手動匯率，僅供參考）"]);
-      model.twd.lines.forEach(function (line) {
-        if (line.rate == null) rows.push([line.currency, "尚未填匯率"]);
-        else {
-          rows.push(["1 " + line.currency + " = " + line.rate + " TWD", Math.round(line.twd)]);
-          twdRows.push(rows.length - 1);
-        }
-      });
-      rows.push([model.twd.missing ? "約當台幣合計" : "約當台幣合計", model.twd.missing ? "匯率未填完" : model.twd.sum]);
-      if (!model.twd.missing) twdRows.push(rows.length - 1);
+      rows.push(["約當台幣合計"]);
+      rows.push(["匯率為手動輸入，未連線查詢，僅供參考。"]);
+      if (!model.twd.lines.length) {
+        rows.push(["沒有可換算的費用。"]);
+      } else {
+        model.twd.lines.forEach(function (line) {
+          rows.push([NG.pricing.twdLineParts(line).text]);
+        });
+        NG.pricing.twdTotalParts(model).forEach(function (row) {
+          if (row.value == null) rows.push([row.text]);
+          else {
+            rows.push([row.label, row.value]);
+            twdRows.push(rows.length - 1);
+          }
+        });
+      }
     }
     const sheet = window.XLSX.utils.aoa_to_sheet(rows);
     moneyCells.forEach(function (pos) {
       const money = sheet[window.XLSX.utils.encode_cell(pos)];
-      if (money && typeof money.v === "number") money.z = "#,##0.00";
+      if (money && typeof money.v === "number") money.z = pos.z || "#,##0.00";
     });
     measureCells.forEach(function (pos) {
       const measure = sheet[window.XLSX.utils.encode_cell(pos)];
@@ -185,7 +215,7 @@
       const cell = sheet[window.XLSX.utils.encode_cell({ r: index, c: 1 })];
       if (cell && typeof cell.v === "number") cell.z = "#,##0";
     });
-    sheet["!cols"] = [{ wch: 28 }, { wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }];
+    sheet["!cols"] = [{ wch: 46 }, { wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }];
     const book = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(book, sheet, "報價單");
     const base = String(model.quoteNumber || "報價單").replace(/[\\/:*?"<>|]/g, "-");
