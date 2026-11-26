@@ -65,6 +65,9 @@ h1 { font-size: 28px; }
 .hero-copy h2 { font-size: 32px; font-weight: 700; margin: 0 0 8px; color: var(--navy); }
 .hero-copy p { margin: 0; font-size: 16px; color: var(--navy); }
 .top-actions, .row-actions, .row-between, .panel-foot, .markup-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.current-user { color: var(--muted); font-size: 14px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+a.btn[hidden] { display: none !important; }
 .row-between { justify-content: space-between; margin: 22px 0 10px; }
 
 .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 0 0; }
@@ -353,7 +356,6 @@ dialog::backdrop { background: rgba(20, 40, 60, 0.45); }
     var(--paper);
 }
 .auth-gate[hidden] { display: none !important; }
-html.auth-skip .auth-gate { display: none !important; }
 html.auth-locked,
 html.auth-locked body { overflow: hidden; }
 html.auth-locked body > :not(#auth-gate) { visibility: hidden; }

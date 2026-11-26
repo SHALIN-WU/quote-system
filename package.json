@@ -1,0 +1,18 @@
+{
+  "name": "quote-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "物流報價後台：Cloudflare Pages、Pages Functions、D1",
+  "scripts": {
+    "prepare:dist": "node scripts/prepare-dist.mjs",
+    "dev": "npm run prepare:dist && wrangler pages dev dist --d1=DB --ip 127.0.0.1 --port 8080",
+    "db:local": "wrangler d1 execute quote-admin --local --file=./migrations/0001_auth.sql && wrangler d1 execute quote-admin --local --file=./migrations/0002_login_lock_scope.sql"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "wrangler": "^4.164.0"
+  }
+}

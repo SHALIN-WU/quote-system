@@ -5,25 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>物流報價系統</title>
   <!--
-    快取版本 ASSET_VERSION：20261125a
+    快取版本 ASSET_VERSION：20261126b
     之後每次改 js/ 或 css/，要記得把這個版本號改掉，
     並把本檔 css 與所有 js/ 的 ?v= 改成同一個值。libs/ 與外部網址不要加。
   -->
-  <link rel="stylesheet" href="css/styles.css?v=20261125a">
+  <link rel="stylesheet" href="css/styles.css?v=20261126b">
   <script>
-    document.documentElement.classList.add(location.hostname === "127.0.0.1" ? "auth-skip" : "auth-locked");
+    document.documentElement.classList.add("auth-locked");
   </script>
 </head>
 <body>
-  <div id="auth-gate" class="auth-gate" role="dialog" aria-modal="true" aria-label="請輸入密碼">
-    <form id="auth-form" class="auth-card" method="post" action="#" autocomplete="off">
+  <div id="auth-gate" class="auth-gate" role="status" aria-live="polite">
+    <div class="auth-card">
       <img class="auth-logo" src="images/northgo-logo.png?v=4" alt="NorthGO">
-      <label>密碼
-        <input id="auth-password" type="password" autocomplete="current-password" required>
-      </label>
-      <button type="submit" class="btn" id="auth-enter">進入</button>
-      <p id="auth-error" class="auth-error" role="alert"></p>
-    </form>
+      <p id="auth-status">正在確認登入狀態</p>
+    </div>
   </div>
 
   <header class="topbar no-print">
@@ -37,7 +33,9 @@
     <div class="top-actions">
       <button type="button" class="btn ghost" id="new-quote">新報價</button>
       <button type="button" class="btn" id="open-history">歷史報價</button>
-      <button type="button" class="btn ghost" id="btn-lock">鎖定</button>
+      <span id="current-user" class="current-user"></span>
+      <a class="btn ghost" id="link-admin" href="admin/users.html" hidden>帳號管理</a>
+      <button type="button" class="btn ghost" id="btn-logout">登出</button>
     </div>
   </header>
 
@@ -420,17 +418,17 @@
   <script src="libs/xlsx.full.min.js"></script>
   <script src="libs/pdf.min.js"></script>
   <!-- 以下 ?v= 須與 head 的快取版本 ASSET_VERSION 相同 -->
-  <script src="js/config.js?v=20261125a"></script>
-  <script src="js/storage.js?v=20261125a"></script>
-  <script src="js/parse.js?v=20261125a"></script>
-  <script src="js/import-word.js?v=20261125a"></script>
-  <script src="js/import-excel.js?v=20261125a"></script>
-  <script src="js/import-pdf.js?v=20261125a"></script>
-  <script src="js/cargo.js?v=20261125a"></script>
-  <script src="js/pricing.js?v=20261125a"></script>
-  <script src="js/quote-doc.js?v=20261125a"></script>
-  <script src="js/history.js?v=20261125a"></script>
-  <script src="js/app.js?v=20261125a"></script>
-  <script src="js/auth.js?v=20261125a"></script>
+  <script src="js/config.js?v=20261126b"></script>
+  <script src="js/storage.js?v=20261126b"></script>
+  <script src="js/parse.js?v=20261126b"></script>
+  <script src="js/import-word.js?v=20261126b"></script>
+  <script src="js/import-excel.js?v=20261126b"></script>
+  <script src="js/import-pdf.js?v=20261126b"></script>
+  <script src="js/cargo.js?v=20261126b"></script>
+  <script src="js/pricing.js?v=20261126b"></script>
+  <script src="js/quote-doc.js?v=20261126b"></script>
+  <script src="js/history.js?v=20261126b"></script>
+  <script src="js/app.js?v=20261126b"></script>
+  <script src="js/auth.js?v=20261126b"></script>
 </body>
 </html>

@@ -1,9 +1,14 @@
 data/
 samples/
+tests/
 .dev.vars
-.wrangler/
-worker/node_modules/
+.dev.vars.*
 .env
+.env.*
+.wrangler/
+node_modules/
+worker/node_modules/
+dist/
 *.docx
 *.xlsx
 *.xls
@@ -11,4 +16,7 @@ worker/node_modules/
 *.pdf
 ~$*
 quote-backup-*.json
-tests/
+*.pem
+*.key
+credentials.json
+*.local

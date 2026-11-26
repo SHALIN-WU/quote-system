@@ -1,147 +1,63 @@
-﻿# 物流報價系統 — 只在這台電腦開啟
-# 在本資料夾的 PowerShell 執行：
+﻿# 物流報價後台 — 本機 Pages Functions + D1
+# 在這個資料夾的 PowerShell 執行：
 #   powershell -ExecutionPolicy Bypass -File .\start.ps1
-# 瀏覽器會開啟 http://127.0.0.1:8080/ （若被占用則改 8081）
-# 按 Ctrl+C 停止。
+# 瀏覽器會開啟 http://127.0.0.1:8080/login
+# 127.0.0.1 也要登入。按 Ctrl+C 停止。
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $root
 
-function Test-PortFree([int] $Port) {
-  $client = New-Object System.Net.Sockets.TcpClient
-  try {
-    $wait = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
-    $opened = $wait.AsyncWaitHandle.WaitOne(300, $false)
-    if (-not $opened) { return $true }
-    try { $client.EndConnect($wait) } catch { return $true }
-    return $false
-  } catch {
-    return $true
-  } finally {
-    $client.Close()
-  }
-}
+$env:NODE_OPTIONS = "--use-system-ca"
+$nodeHome = "C:\Users\user\AppData\Local\nodejs-portable\node-v24.22.1-win-x64"
+$node = Join-Path $nodeHome "node.exe"
+$npx = Join-Path $nodeHome "npx.cmd"
+$npm = Join-Path $nodeHome "npm.cmd"
 
-$port = 8080
-if (-not (Test-PortFree $port)) { $port = 8081 }
-if (-not (Test-PortFree $port)) {
-  Write-Host "8080 和 8081 都被占用，請先關掉佔用的程式。"
+if (-not (Test-Path -LiteralPath $npx) -or -not (Test-Path -LiteralPath $node)) {
+  Write-Host "找不到可攜版 Node：$npx"
   Read-Host "按 Enter 結束"
   exit 1
 }
 
-$url = "http://127.0.0.1:$port/"
+$env:PATH = "$nodeHome;" + $env:PATH
 
-function Find-Python {
-  $candidates = @(
-    @{ Name = "py"; Prefix = @("-3") },
-    @{ Name = "python"; Prefix = @() },
-    @{ Name = "python3"; Prefix = @() }
-  )
-  foreach ($item in $candidates) {
-    $cmd = Get-Command $item.Name -ErrorAction SilentlyContinue
-    if (-not $cmd) { continue }
-    if ($cmd.Source -like "*\WindowsApps\*") { continue }
-    $check = @()
-    $check += $item.Prefix
-    $check += @("-c", "import sys; raise SystemExit(0 if sys.version_info[0] >= 3 else 1)")
-    & $cmd.Source @check
-    if ($LASTEXITCODE -eq 0) {
-      return @{ Exe = $cmd.Source; Prefix = $item.Prefix }
-    }
-  }
-  return $null
+if (-not (Test-Path -LiteralPath (Join-Path $root "node_modules\wrangler"))) {
+  Write-Host "安裝本機工具…"
+  & $npm install
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-function Start-LocalBrowser([string] $Target) {
-  Start-Process $Target
+Write-Host "建立本機資料表…"
+$migrationFiles = Get-ChildItem -LiteralPath (Join-Path $root "migrations") -Filter "*.sql" | Sort-Object Name
+foreach ($migration in $migrationFiles) {
+  & $npx wrangler d1 execute quote-admin --local --file="./migrations/$($migration.Name)"
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-$python = Find-Python
-if ($python) {
-  $helpArgs = @()
-  $helpArgs += $python.Prefix
-  $helpArgs += @("-m", "http.server", "--help")
-  $helpText = & $python.Exe @helpArgs 2>&1 | Out-String
-  if ($helpText -match "--bind") {
-    Write-Host "啟動 $url"
-    Write-Host "按 Ctrl+C 停止伺服器。"
-    Start-LocalBrowser $url
-    $serve = @()
-    $serve += $python.Prefix
-    $serve += @("-m", "http.server", "$port", "--bind", "127.0.0.1")
-    & $python.Exe @serve
-    exit $LASTEXITCODE
-  }
+$vars = Join-Path $root ".dev.vars"
+if (-not (Test-Path -LiteralPath $vars)) {
+  Write-Host "本機資料表已建好。請先建立 .dev.vars（不會進 Git），可參考 dev.vars.example。"
+  Write-Host "內容需要這三行（密碼請自己填，不要寫在指令裡）："
+  Write-Host "  COOKIE_SECURE=false"
+  Write-Host "  SESSION_SECRET=至少 16 字元的隨機字串"
+  Write-Host "  ADMIN_PASSWORD=第一個管理員的密碼（至少 8 碼）"
+  Write-Host "第一個管理員帳號是 admin。使用者資料表是空的時，第一次登入才會建立這個帳號。"
+  Read-Host "按 Enter 結束"
+  exit 1
 }
 
-Write-Host "改用 PowerShell 本機伺服器。"
+Write-Host "整理靜態檔…"
+& $node (Join-Path $root "scripts\prepare-dist.mjs")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$url = "http://127.0.0.1:8080/login"
 Write-Host "啟動 $url"
-Write-Host "按 Ctrl+C 停止伺服器。"
-
-$listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add($url)
-try {
-  $listener.Start()
-} catch {
-  Write-Host "無法啟動伺服器：$($_.Exception.Message)"
-  Read-Host "按 Enter 結束"
-  exit 1
-}
-
-Start-LocalBrowser $url
-
-$types = @{
-  ".html" = "text/html; charset=utf-8"
-  ".css"  = "text/css; charset=utf-8"
-  ".js"   = "text/javascript; charset=utf-8"
-  ".json" = "application/json; charset=utf-8"
-  ".svg"  = "image/svg+xml"
-  ".png"  = "image/png"
-  ".jpg"  = "image/jpeg"
-  ".jpeg" = "image/jpeg"
-  ".ico"  = "image/x-icon"
-  ".map"  = "application/json; charset=utf-8"
-}
-
-$rootFull = [System.IO.Path]::GetFullPath($root)
-if (-not $rootFull.EndsWith("\")) { $rootFull = $rootFull + "\" }
-
-try {
-  while ($listener.IsListening) {
-    $context = $listener.GetContext()
-    try {
-      $path = [System.Uri]::UnescapeDataString($context.Request.Url.AbsolutePath)
-      if ([string]::IsNullOrWhiteSpace($path) -or $path -eq "/") { $path = "/index.html" }
-      $rel = $path.TrimStart("/").Replace("/", [System.IO.Path]::DirectorySeparatorChar)
-      $full = [System.IO.Path]::GetFullPath((Join-Path $rootFull $rel))
-      if (-not $full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
-        $context.Response.StatusCode = 403
-        $context.Response.Close()
-        continue
-      }
-      if (-not (Test-Path -LiteralPath $full -PathType Leaf)) {
-        $context.Response.StatusCode = 404
-        $missing = [System.Text.Encoding]::UTF8.GetBytes("404")
-        $context.Response.OutputStream.Write($missing, 0, $missing.Length)
-        $context.Response.Close()
-        continue
-      }
-      $ext = [System.IO.Path]::GetExtension($full).ToLowerInvariant()
-      $contentType = $types[$ext]
-      if (-not $contentType) { $contentType = "application/octet-stream" }
-      $bytes = [System.IO.File]::ReadAllBytes($full)
-      $context.Response.StatusCode = 200
-      $context.Response.ContentType = $contentType
-      $context.Response.ContentLength64 = $bytes.Length
-      $context.Response.OutputStream.Write($bytes, 0, $bytes.Length)
-      $context.Response.Close()
-    } catch {
-      try { $context.Response.Abort() } catch { }
-    }
-  }
-} finally {
-  if ($listener.IsListening) { $listener.Stop() }
-  $listener.Close()
-}
+Write-Host "按 Ctrl+C 停止。"
+Start-Process powershell -WindowStyle Hidden -ArgumentList @(
+  "-NoProfile",
+  "-Command",
+  "Start-Sleep -Seconds 3; Start-Process '$url'"
+)
+& $npx wrangler pages dev dist --d1=DB --ip 127.0.0.1 --port 8080
+exit $LASTEXITCODE

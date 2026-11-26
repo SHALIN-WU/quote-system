@@ -1,0 +1,6 @@
+.user-form { display: grid; gap: 12px; margin-top: 8px; }
+.user-form h3 { margin: 0; }
+.page-status { min-height: 1.4em; margin: 8px 0; }
+.page-status.error { color: var(--loss); }
+.user-table { width: 100%; border-collapse: collapse; }
+.user-table th, .user-table td { white-space: nowrap; }

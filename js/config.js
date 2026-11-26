@@ -1,7 +1,5 @@
 (function (NG) {
   NG.config = {
-    // 部署 Worker 後改成實際網址。密碼與金鑰不可寫在這個檔案。
-    AUTH_URL: "https://quote-auth.shalin-wu.workers.dev",
     companyName: "Northgo Inc. Kaohsiung Branch",
     units: [
       { id: "kg", label: "Per KG" },

@@ -1,0 +1,22 @@
+name = "quote-admin"
+compatibility_date = "2026-11-01"
+pages_build_output_dir = "dist"
+
+# 這顆 D1 是報價後台自己的。不要改成 NGO W3 的 northgo-inquiries。
+# database_id 要等「wrangler d1 create quote-admin」之後，換成那個指令印出的 id。
+# 下面這組佔位值不能連到任何現有資料庫。正式部署前必須換掉。這次不部署。
+[[d1_databases]]
+binding = "DB"
+database_name = "quote-admin"
+database_id = "00000000-0000-0000-0000-000000000001"
+preview_database_id = "DB"
+
+[vars]
+ADMIN_USERNAME = "admin"
+COOKIE_SECURE = "true"
+
+# 密碼與 SESSION_SECRET 只能用 Cloudflare Pages Secrets，不可寫進這個檔案。
+# 不要把值寫在指令後面，避免留在命令紀錄：
+#   npx wrangler pages secret put SESSION_SECRET --project-name=quote-admin
+#   npx wrangler pages secret put ADMIN_PASSWORD --project-name=quote-admin
+# 本機把同樣兩個名稱寫進 .dev.vars，並加 COOKIE_SECURE=false。該檔已由 .gitignore 排除。

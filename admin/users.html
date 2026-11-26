@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>帳號管理｜物流報價系統</title>
+  <link rel="stylesheet" href="/css/styles.css?v=20261126b">
+  <link rel="stylesheet" href="/admin/users.css?v=20261126b">
+</head>
+<body>
+  <header class="topbar no-print">
+    <div class="brand">
+      <img class="brand-logo" src="/images/northgo-logo.png?v=4" alt="NorthGO">
+      <div>
+        <p class="eyebrow">Northgo Inc. Kaohsiung Branch</p>
+        <h1>帳號管理</h1>
+      </div>
+    </div>
+    <div class="top-actions">
+      <a class="btn ghost" href="/">回到報價</a>
+      <button type="button" class="btn ghost" id="btn-logout">登出</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="row-between">
+      <h2>帳號</h2>
+      <button type="button" class="btn" id="btn-new">新增帳號</button>
+    </div>
+    <p id="page-status" class="page-status" role="status"></p>
+    <div class="table-scroll">
+      <table class="user-table">
+        <thead>
+          <tr>
+            <th>帳號</th>
+            <th>顯示名稱</th>
+            <th>角色</th>
+            <th>狀態</th>
+            <th>最後登入</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="user-rows"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <dialog id="user-dialog">
+    <form id="user-form" class="user-form" method="post" action="#" autocomplete="off">
+      <h3 id="dialog-title">新增帳號</h3>
+      <label>帳號
+        <input id="field-username" name="username" maxlength="32" autocomplete="off" required>
+      </label>
+      <label>顯示名稱
+        <input id="field-display" name="displayName" maxlength="80" required>
+      </label>
+      <label>角色
+        <select id="field-role" name="role">
+          <option value="admin">管理員</option>
+          <option value="sales">業務</option>
+          <option value="viewer">查看者</option>
+        </select>
+      </label>
+      <label>狀態
+        <select id="field-active" name="active">
+          <option value="true">啟用</option>
+          <option value="false">停用</option>
+        </select>
+      </label>
+      <label><span id="password-caption">密碼</span>
+        <input id="field-password" name="password" type="password" maxlength="256" autocomplete="new-password">
+      </label>
+      <p id="form-hint" class="hint"></p>
+      <p id="form-error" class="page-status error" role="alert"></p>
+      <div class="row-actions">
+        <button type="button" class="btn ghost" id="btn-cancel">取消</button>
+        <button type="submit" class="btn" id="btn-save">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/admin/users.js?v=20261126b"></script>
+</body>
+</html>

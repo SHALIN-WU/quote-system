@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登入｜物流報價系統</title>
+  <style>
+    :root {
+      --ink: #1b2430;
+      --muted: #5d6b7a;
+      --navy: #13283F;
+      --cyan: #1FD8D8;
+      --paper: #f3f1ea;
+      --card: #fffcf7;
+      --line: #ddd6c8;
+      --loss: #8d2f2f;
+      --shadow: 0 14px 40px rgba(20, 40, 60, 0.08);
+      --sans: "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(31, 216, 216, 0.14), transparent 28%),
+        var(--paper);
+    }
+    form {
+      width: min(400px, 100%);
+      display: grid;
+      gap: 14px;
+      padding: 32px 28px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    img { height: 48px; width: auto; justify-self: center; }
+    h1 { margin: 0; font-size: 22px; text-align: center; }
+    label { display: grid; gap: 4px; font-size: 14px; }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font: inherit;
+      color: inherit;
+      background: white;
+    }
+    button {
+      width: 100%;
+      border: 1px solid var(--navy);
+      background: var(--navy);
+      color: white;
+      border-radius: 4px;
+      padding: 9px 14px;
+      font: inherit;
+      cursor: pointer;
+      box-shadow: inset 0 -3px 0 var(--cyan);
+    }
+    button:disabled { opacity: 0.65; cursor: wait; }
+    p { min-height: 1.4em; margin: 0; color: var(--loss); font-size: 14px; }
+    p:empty { display: none; }
+  </style>
+</head>
+<body>
+  <form id="login-form" method="post" action="#" autocomplete="off">
+    <img src="images/northgo-logo.png?v=4" alt="NorthGO">
+    <h1>物流報價系統</h1>
+    <label>帳號
+      <input id="username" name="username" autocomplete="username" required maxlength="32">
+    </label>
+    <label>密碼
+      <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+    </label>
+    <button type="submit" id="submit">登入</button>
+    <p id="error" role="alert"></p>
+  </form>
+  <script>
+    (function () {
+      var form = document.getElementById("login-form");
+      var username = document.getElementById("username");
+      var password = document.getElementById("password");
+      var button = document.getElementById("submit");
+      var errorEl = document.getElementById("error");
+      var messages = {
+        400: "請輸入帳號與密碼。",
+        401: "帳號或密碼錯誤。",
+        413: "請輸入帳號與密碼。",
+        429: "錯誤次數過多，請稍後再試。",
+        500: "登入失敗，請稍後再試。"
+      };
+
+      fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" })
+        .then(function (res) { if (res.ok) location.replace("/"); })
+        .catch(function () {});
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        errorEl.textContent = "";
+        button.disabled = true;
+        fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          cache: "no-store",
+          body: JSON.stringify({
+            username: username.value,
+            password: password.value
+          })
+        }).then(function (res) {
+          password.value = "";
+          if (res.ok) {
+            location.replace("/");
+            return;
+          }
+          errorEl.textContent = messages[res.status] || "登入失敗，請稍後再試。";
+        }).catch(function () {
+          password.value = "";
+          errorEl.textContent = "無法連線，請稍後再試。";
+        }).then(function () {
+          button.disabled = false;
+          password.focus();
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

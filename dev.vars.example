@@ -1,0 +1,5 @@
+# 複製成 .dev.vars 後自己填。這個範例沒有密碼，.dev.vars 不會進 Git。
+# 不要把密碼寫在指令列。
+COOKIE_SECURE=false
+# SESSION_SECRET=
+# ADMIN_PASSWORD=
