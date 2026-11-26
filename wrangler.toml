@@ -8,7 +8,7 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "quote-admin"
-database_id = "00000000-0000-0000-0000-000000000001"
+database_id = "daab466b-50e4-4b81-9adf-38f617c3e236"
 preview_database_id = "DB"
 
 [vars]
