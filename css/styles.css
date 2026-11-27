@@ -28,7 +28,7 @@ button { cursor: pointer; }
 h1, h2, h3 { line-height: 1.25; margin: 0; }
 p { margin: 0; }
 
-.topbar, .steps, main, .legal { width: min(1120px, calc(100% - 32px)); margin-left: auto; margin-right: auto; }
+.topbar, .steps-bar, main, .legal { width: min(1120px, calc(100% - 32px)); margin-left: auto; margin-right: auto; }
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -70,7 +70,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 a.btn[hidden] { display: none !important; }
 .row-between { justify-content: space-between; margin: 22px 0 10px; }
 
-.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 0 0; }
+.steps-bar { display: flex; align-items: center; gap: 12px; padding: 8px 0 0; }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; flex: 1 1 auto; min-width: 0; padding: 0; }
+#new-quote { flex: 0 0 auto; padding: 12px 20px; font-size: 16px; font-weight: 700; white-space: nowrap; }
 .steps button, .btn, .btn.ghost {
   border: 1px solid var(--navy);
   background: var(--navy);
@@ -324,6 +326,9 @@ dialog::backdrop { background: rgba(20, 40, 60, 0.45); }
 .legacy-banner[hidden] { display: none; }
 
 @media (max-width: 800px) {
+  .steps-bar { flex-wrap: wrap; }
+  .steps-bar .steps { flex-basis: 100%; }
+  #new-quote { margin-left: auto; }
   .steps, .import-grid, .cargo-grid, .map-grid, .metrics, .q-cargo { grid-template-columns: 1fr 1fr; }
   .card-wide, .span-2, .q-head { grid-column: 1 / -1; display: block; }
   h1 { font-size: 22px; }

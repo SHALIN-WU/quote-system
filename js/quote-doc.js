@@ -125,11 +125,79 @@
     return currency === "TWD" ? "#,##0" : "#,##0.00";
   }
 
+  const HEADER_ROWS = 3;
+  let excelJsLoading = null;
+
+  function bytesToBase64(bytes) {
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  function loadExcelJS() {
+    if (window.ExcelJS && typeof window.ExcelJS.Workbook === "function") {
+      return Promise.resolve(window.ExcelJS);
+    }
+    if (excelJsLoading) return excelJsLoading;
+    excelJsLoading = new Promise(function (resolve, reject) {
+      const script = document.createElement("script");
+      script.src = "libs/exceljs.min.js";
+      script.async = true;
+      function fail(error) {
+        excelJsLoading = null;
+        script.remove();
+        reject(error);
+      }
+      script.onload = function () {
+        if (window.ExcelJS && typeof window.ExcelJS.Workbook === "function") resolve(window.ExcelJS);
+        else fail(new Error("ExcelJS 沒有載入"));
+      };
+      script.onerror = function () {
+        fail(new Error("ExcelJS 沒有載入"));
+      };
+      document.head.appendChild(script);
+    });
+    return excelJsLoading;
+  }
+
+  function loadLogo() {
+    return fetch("images/northgo-logo.png?v=4").then(function (response) {
+      if (!response.ok) throw new Error("Logo 沒有載入");
+      return response.arrayBuffer();
+    }).then(function (buffer) {
+      const bytes = new Uint8Array(buffer);
+      if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4E || bytes[3] !== 0x47) {
+        throw new Error("Logo 沒有載入");
+      }
+      return bytesToBase64(bytes);
+    }, function () {
+      throw new Error("Logo 沒有載入");
+    });
+  }
+
+  function downloadXlsx(bytes, filename) {
+    const blob = new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
   function exportXlsx(model) {
-    if (!window.XLSX) throw new Error("SheetJS 沒有載入");
-    const rows = [
-      [cell(model.companyName)],
-      ["報價單"],
+    return Promise.all([loadExcelJS(), loadLogo()]).then(function (loaded) {
+      const ExcelJS = loaded[0];
+      const logoBase64 = loaded[1];
+      if (!logoBase64) throw new Error("Logo 沒有載入");
+      const rows = [
       ["報價單號", cell(model.quoteNumber || "")],
       ["客戶名稱", cell(model.customerName || "")],
       ["報價日期", model.quoteDate || ""],
@@ -198,28 +266,73 @@
         });
       }
     }
-    const sheet = window.XLSX.utils.aoa_to_sheet(rows);
-    moneyCells.forEach(function (pos) {
-      const money = sheet[window.XLSX.utils.encode_cell(pos)];
-      if (money && typeof money.v === "number") money.z = pos.z || "#,##0.00";
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("報價單");
+      [46, 32, 14, 14, 12, 16].forEach(function (width, index) {
+        sheet.getColumn(index + 1).width = width;
+      });
+      sheet.getRow(1).height = 18;
+      sheet.getRow(2).height = 22;
+      sheet.getRow(3).height = 8;
+      const companyText = cell(model.companyName || "");
+      const companyCell = sheet.getCell(1, 1);
+      companyCell.value = companyText;
+      companyCell.font = { name: "Segoe UI", size: 12, bold: true, color: { argb: "FF13283F" } };
+      companyCell.alignment = { vertical: "middle", horizontal: "left", indent: 20, wrapText: false };
+      const titleCell = sheet.getCell(2, 1);
+      titleCell.value = "報價單";
+      titleCell.font = { name: "Segoe UI", size: 18, bold: true, color: { argb: "FF1B2430" } };
+      titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 20, wrapText: false };
+      const imageId = workbook.addImage({
+        base64: logoBase64,
+        extension: "png",
+        name: "northgo-logo",
+      });
+      sheet.addImage(imageId, {
+        tl: { col: 0.12, row: 0.22 },
+        ext: { width: 143, height: 28 },
+        editAs: "oneCell",
+      });
+      const media = workbook.media && workbook.media[imageId];
+      if (!sheet.getImages().length || !media || media.extension !== "png" || !(media.base64 || media.buffer)) {
+        throw new Error("Logo 沒有載入");
+      }
+      if (String(companyCell.value || "") !== String(companyText) || titleCell.value !== "報價單") {
+        throw new Error("無法匯出");
+      }
+      let foundHeader = false;
+      const dataRow = HEADER_ROWS + 1;
+      rows.forEach(function (row, index) {
+        if (row[0] === "項目" && row[5] === "報價小計") foundHeader = true;
+        const excelRow = sheet.getRow(index + dataRow);
+        row.forEach(function (value, column) {
+          if (value === undefined) return;
+          excelRow.getCell(column + 1).value = value;
+        });
+      });
+      if (!foundHeader) throw new Error("無法匯出");
+      function paint(list, format) {
+        list.forEach(function (pos) {
+          const item = sheet.getCell(pos.r + dataRow, pos.c + 1);
+          if (item && typeof item.value === "number") item.numFmt = format || pos.z || "#,##0.00";
+        });
+      }
+      paint(moneyCells);
+      paint(measureCells, "#,##0.0");
+      paint(cargoDecimalCells, "#,##0.00");
+      twdRows.forEach(function (index) {
+        const item = sheet.getCell(index + dataRow, 2);
+        if (item && typeof item.value === "number") item.numFmt = "#,##0";
+      });
+      const base = String(model.quoteNumber || "報價單").replace(/[\\/:*?"<>|]/g, "-");
+      return workbook.xlsx.writeBuffer().then(function (buffer) {
+        const bytes = buffer instanceof ArrayBuffer
+          ? new Uint8Array(buffer)
+          : (ArrayBuffer.isView(buffer) ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength) : null);
+        if (!bytes || bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4B) throw new Error("無法匯出");
+        downloadXlsx(bytes, base + ".xlsx");
+      });
     });
-    measureCells.forEach(function (pos) {
-      const measure = sheet[window.XLSX.utils.encode_cell(pos)];
-      if (measure && typeof measure.v === "number") measure.z = "#,##0.0";
-    });
-    cargoDecimalCells.forEach(function (pos) {
-      const decimalCell = sheet[window.XLSX.utils.encode_cell(pos)];
-      if (decimalCell && typeof decimalCell.v === "number") decimalCell.z = "#,##0.00";
-    });
-    twdRows.forEach(function (index) {
-      const cell = sheet[window.XLSX.utils.encode_cell({ r: index, c: 1 })];
-      if (cell && typeof cell.v === "number") cell.z = "#,##0";
-    });
-    sheet["!cols"] = [{ wch: 46 }, { wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }];
-    const book = window.XLSX.utils.book_new();
-    window.XLSX.utils.book_append_sheet(book, sheet, "報價單");
-    const base = String(model.quoteNumber || "報價單").replace(/[\\/:*?"<>|]/g, "-");
-    window.XLSX.writeFile(book, base + ".xlsx");
   }
 
   NG.quoteDoc = {

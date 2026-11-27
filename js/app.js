@@ -2580,15 +2580,23 @@
         window.print();
       }).catch(function () {});
     });
+    let exportingQuote = false;
     $("export-quote").addEventListener("click", function () {
+      if (exportingQuote) return;
+      exportingQuote = true;
       ensureNumber().then(function () {
         fillQuoteForm();
-        NG.quoteDoc.exportXlsx(buildModel());
+        return NG.quoteDoc.exportXlsx(buildModel());
+      }).then(function () {
         setStatus("已匯出 Excel");
       }).catch(function (error) {
         if (error && error.status === 0) return;
-        if (!state.quoteNumber) return;
-        setStatus("無法匯出：" + (error.message || error));
+        const message = error && error.message ? error.message : String(error || "");
+        const exportFailed = message === "ExcelJS 沒有載入" || message === "Logo 沒有載入" || message === "無法匯出";
+        if (!exportFailed && !state.quoteNumber) return;
+        setStatus("無法匯出：" + message);
+      }).then(function () {
+        exportingQuote = false;
       });
     });
     $("new-quote").addEventListener("click", newQuote);
