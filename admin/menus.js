@@ -1,10 +1,5 @@
 (function () {
-  var ROLES = [
-    ["admin", "管理員"],
-    ["sales", "業務"],
-    ["service", "客服"],
-  ];
-  var state = { items: [], mode: "" };
+  var state = { items: [], roles: [], mode: "" };
   var tree = document.getElementById("menu-tree");
   var pageStatus = document.getElementById("page-status");
   var dialog = document.getElementById("menu-dialog");
@@ -46,18 +41,24 @@
   }
 
   function renderRoles(item) {
+    if (item.isSystem) {
+      var note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = "依帳號權限顯示";
+      return note;
+    }
     var wrap = document.createElement("div");
     wrap.className = "menu-roles";
-    ROLES.forEach(function (pair) {
+    state.roles.forEach(function (role) {
       var label = document.createElement("label");
       label.className = "check";
       var input = document.createElement("input");
       input.type = "checkbox";
-      input.dataset.roleToggle = pair[0];
+      input.dataset.roleToggle = role.id;
       input.dataset.id = item.id;
-      input.checked = item.roles.indexOf(pair[0]) >= 0;
-      if (item.lockAdmin && pair[0] === "admin") input.disabled = true;
-      label.append(input, document.createTextNode(" " + pair[1]));
+      input.checked = item.roles.indexOf(role.id) >= 0;
+      if (item.lockAdmin && role.id === "admin") input.disabled = true;
+      label.append(input, document.createTextNode(" " + role.label));
       wrap.appendChild(label);
     });
     return wrap;
@@ -139,9 +140,33 @@
     return true;
   }
 
+  function fillRoleField() {
+    var field = document.getElementById("role-field");
+    var legend = field.querySelector("legend");
+    field.replaceChildren(legend);
+    state.roles.forEach(function (role) {
+      var label = document.createElement("label");
+      label.className = "check";
+      var input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "role";
+      input.value = role.id;
+      input.checked = role.id === "admin";
+      label.append(input, document.createTextNode(" " + role.label));
+      field.appendChild(label);
+    });
+  }
+
   function load() {
-    return api("/api/menus/manage").then(function (result) {
-      if (!applyItems(result) && result.status === 403) setStatus("沒有權限", true);
+    return Promise.all([api("/api/menus/manage"), api("/api/roles")]).then(function (results) {
+      var roles = results[1];
+      if (roles.status === 200 && Array.isArray(roles.data.items)) {
+        state.roles = roles.data.items;
+        fillRoleField();
+      }
+      if (!applyItems(results[0]) && results[0].status === 403) setStatus("沒有權限", true);
+      if (roles.status === 403) setStatus("沒有權限", true);
+      else if (roles.status !== 200) setStatus("無法讀取角色", true);
     }).catch(function () {
       setStatus("無法連線，請稍後再試。", true);
     });
@@ -180,9 +205,7 @@
       option.textContent = group.label;
       parent.appendChild(option);
     });
-    form.querySelectorAll("input[name=role]").forEach(function (input) {
-      input.checked = input.value === "admin";
-    });
+    fillRoleField();
     dialog.showModal();
     document.getElementById("field-label").focus();
   }
@@ -224,7 +247,7 @@
     if (!input.dataset || !input.dataset.roleToggle) return;
     var item = findItem(input.dataset.id);
     if (!item) return;
-    var roles = ROLES.map(function (pair) { return pair[0]; }).filter(function (role) {
+    var roles = state.roles.map(function (role) { return role.id; }).filter(function (role) {
       if (role === input.dataset.roleToggle) return input.checked;
       return item.roles.indexOf(role) >= 0;
     });

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>選單管理｜物流報價系統</title>
-  <link rel="stylesheet" href="/css/styles.css?v=20261126e">
-  <link rel="stylesheet" href="/admin/users.css?v=20261126e">
+  <link rel="stylesheet" href="/css/styles.css?v=20261127a">
+  <link rel="stylesheet" href="/admin/users.css?v=20261127a">
 </head>
 <body>
   <div class="app-shell">
@@ -40,7 +40,7 @@
             <button type="button" class="btn" id="btn-add-item">新增項目</button>
           </div>
         </div>
-        <p class="hint">內建頁面不能刪除，只能隱藏。帳號管理、選單管理和系統設定不能對管理員隱藏。自己加的項目是連結，不會變成新功能。</p>
+        <p class="hint">內建頁面不能刪除，只能隱藏，而且依帳號權限顯示。帳號管理、選單管理、角色管理和系統設定不能對管理員隱藏。自己加的項目是連結，勾選哪些角色看得到。</p>
         <p id="page-status" class="page-status" role="status"></p>
         <div id="menu-tree"></div>
       </main>
@@ -62,9 +62,6 @@
       </label>
       <fieldset id="role-field">
         <legend>哪些角色看得到</legend>
-        <label class="check"><input type="checkbox" name="role" value="admin" checked> 管理員</label>
-        <label class="check"><input type="checkbox" name="role" value="sales"> 業務</label>
-        <label class="check"><input type="checkbox" name="role" value="service"> 客服</label>
       </fieldset>
       <p id="form-error" class="page-status error" role="alert"></p>
       <div class="row-actions">
@@ -74,7 +71,7 @@
     </form>
   </dialog>
 
-  <script src="/js/nav.js?v=20261126e"></script>
-  <script src="/admin/menus.js?v=20261126e"></script>
+  <script src="/js/nav.js?v=20261127a"></script>
+  <script src="/admin/menus.js?v=20261127a"></script>
 </body>
 </html>

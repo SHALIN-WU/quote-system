@@ -1,5 +1,6 @@
-import { forbidUnless, requireUser } from "../../_lib/auth.js";
+import { requireUser } from "../../_lib/auth.js";
 import { json, readJson } from "../../_lib/http.js";
+import { forbidUnlessPermission, hasPermission } from "../../_lib/permissions.js";
 import { deleteQuote, getQuote, updateQuote } from "../../_lib/quoteStore.js";
 
 const BODY_MAX = 1500000;
@@ -14,8 +15,10 @@ function fail(error) {
 export async function onRequestGet(context) {
   const gate = await requireUser(context.request, context.env);
   if (gate.response) return gate.response;
+  const denied = forbidUnlessPermission(gate.user, "quote.view");
+  if (denied) return denied;
   try {
-    const item = await getQuote(context.env.DB, context.params.id, gate.user.role);
+    const item = await getQuote(context.env.DB, context.params.id, hasPermission(gate.user, "quote.cost"));
     if (!item) return json({ error: "找不到報價" }, 404);
     return json({ item });
   } catch (error) {
@@ -26,7 +29,7 @@ export async function onRequestGet(context) {
 export async function onRequestPut(context) {
   const gate = await requireUser(context.request, context.env);
   if (gate.response) return gate.response;
-  const denied = forbidUnless(gate.user, ["admin", "sales"]);
+  const denied = forbidUnlessPermission(gate.user, "quote.write");
   if (denied) return denied;
   let body;
   try {
@@ -36,7 +39,9 @@ export async function onRequestPut(context) {
   }
   if (!body || !body.document || typeof body.document !== "object") return json({ error: "資料不正確" }, 400);
   try {
-    const item = await updateQuote(context.env.DB, gate.user, context.params.id, body.document, body.updatedAt);
+    const item = await updateQuote(context.env.DB, gate.user, context.params.id, body.document, body.updatedAt, {
+      canSeeCost: hasPermission(gate.user, "quote.cost")
+    });
     if (!item) return json({ error: "找不到報價" }, 404);
     return json({ item });
   } catch (error) {
@@ -47,7 +52,7 @@ export async function onRequestPut(context) {
 export async function onRequestDelete(context) {
   const gate = await requireUser(context.request, context.env);
   if (gate.response) return gate.response;
-  const denied = forbidUnless(gate.user, ["admin"]);
+  const denied = forbidUnlessPermission(gate.user, "quote.delete");
   if (denied) return denied;
   try {
     const ok = await deleteQuote(context.env.DB, context.params.id);

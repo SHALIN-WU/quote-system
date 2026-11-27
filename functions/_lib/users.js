@@ -1,11 +1,7 @@
 import { hashPassword } from "./password.js";
+import { roleExists } from "./roles.js";
 
-// 角色權限。帳號管理只限 admin。報價 API 另在每個路由檢查：
-// - admin 管理員：全部功能，包含成本、利潤、帳號管理、匯入備份、刪除報價、計算參數
-// - sales 業務：可以新增、修改、複製報價，看得到成本與利潤，可以下載備份
-// - service 客服：只能看報價。回應拿掉 costPrice、markupPercent，不含毛利
-
-export const ROLES = ["admin", "sales", "service"];
+// 帳號的 role 是角色 id。能做什麼看 role_permissions，不看角色名稱。
 
 function fail(message) {
   const error = new Error(message);
@@ -72,7 +68,7 @@ export async function createUser(db, input) {
   const password = String(input.password || "");
   if (!/^[a-z0-9._-]{3,32}$/.test(username)) fail("帳號需為 3–32 字元英數（可含 . _ -）");
   if (!displayName || displayName.length > 80) fail("顯示名稱必填");
-  if (!ROLES.includes(role)) fail("角色不正確");
+  if (!(await roleExists(db, role))) fail("角色不正確");
   if (password.length < 8 || password.length > 256) fail("密碼至少 8 碼");
 
   const now = new Date().toISOString();
@@ -98,7 +94,7 @@ export async function updateUser(db, id, patch = {}) {
     updatedAt: new Date().toISOString()
   };
   if (!next.displayName || next.displayName.length > 80) fail("顯示名稱必填");
-  if (!ROLES.includes(next.role)) fail("角色不正確");
+  if (!(await roleExists(db, next.role))) fail("角色不正確");
 
   if (patch.password) {
     const password = String(patch.password);

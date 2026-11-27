@@ -1,4 +1,4 @@
-import { forbidUnless, requireUser } from "../../_lib/auth.js";
+import { requirePermission } from "../../_lib/auth.js";
 import { json, readJson } from "../../_lib/http.js";
 import { deleteMenuNode, listMenus, updateMenuNode } from "../../_lib/menus.js";
 
@@ -13,12 +13,8 @@ function fail(error, missing) {
   return json({ error: "請稍後再試" }, 500);
 }
 
-async function adminGate(context) {
-  const gate = await requireUser(context.request, context.env);
-  if (gate.response) return gate;
-  const denied = forbidUnless(gate.user, ["admin"]);
-  if (denied) return { user: gate.user, response: denied };
-  return gate;
+function adminGate(context) {
+  return requirePermission(context.request, context.env, "menus.manage");
 }
 
 export async function onRequestPatch(context) {

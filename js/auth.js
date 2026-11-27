@@ -18,7 +18,8 @@
     const name = document.getElementById("current-user");
     if (name) name.textContent = user.displayName || user.username || "";
     const link = document.getElementById("link-admin");
-    if (link) link.hidden = user.role !== "admin";
+    const permissions = Array.isArray(user.permissions) ? user.permissions : [];
+    if (link) link.hidden = permissions.indexOf("users.manage") < 0;
   }
 
   async function currentUser() {
@@ -58,6 +59,7 @@
         username: user.username,
         displayName: user.displayName,
         role: user.role,
+        permissions: Array.isArray(user.permissions) ? user.permissions : [],
       };
       applyUser(user);
       showApp();

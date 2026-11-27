@@ -18,6 +18,7 @@
   function highlightKey() {
     if (typeof NG.navHighlight === "function") return NG.navHighlight();
     var path = location.pathname;
+    if (path.indexOf("/admin/roles") >= 0) return "roles";
     if (path.indexOf("/admin/users") >= 0) return "users";
     if (path.indexOf("/admin/menus") >= 0) return "menus";
     return "";

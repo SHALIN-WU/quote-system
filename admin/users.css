@@ -4,3 +4,5 @@
 .page-status.error { color: var(--loss); }
 .user-table { width: 100%; border-collapse: collapse; }
 .user-table th, .user-table td { white-space: nowrap; }
+.role-perms { white-space: normal; min-width: 16em; }
+.perm-grid { display: grid; gap: 6px; max-height: 280px; overflow: auto; }

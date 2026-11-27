@@ -1,6 +1,5 @@
 (function () {
-  var ROLE_LABELS = { admin: "管理員", sales: "業務", service: "客服" };
-  var state = { me: null, items: [], mode: "create", editing: null };
+  var state = { me: null, items: [], roles: [], mode: "create", editing: null };
 
   var rows = document.getElementById("user-rows");
   var pageStatus = document.getElementById("page-status");
@@ -49,7 +48,7 @@
     }
     state.items.forEach(function (user) {
       var tr = document.createElement("tr");
-      [user.username, user.displayName, ROLE_LABELS[user.role] || user.role, user.active ? "啟用" : "停用", formatTime(user.lastLoginAt)]
+      [user.username, user.displayName, roleLabel(user.role), user.active ? "啟用" : "停用", formatTime(user.lastLoginAt)]
         .forEach(function (value) {
           var td = document.createElement("td");
           td.textContent = value;
@@ -67,6 +66,27 @@
     });
   }
 
+  function roleLabel(id) {
+    var found = state.roles.filter(function (role) { return role.id === id; })[0];
+    return found ? found.label : (id || "");
+  }
+
+  function fillRoleSelect(selected) {
+    var select = document.getElementById("field-role");
+    select.replaceChildren();
+    state.roles.forEach(function (role) {
+      var option = document.createElement("option");
+      option.value = role.id;
+      option.textContent = role.label;
+      select.appendChild(option);
+    });
+    if (selected) select.value = selected;
+    if (!select.value) {
+      var sales = state.roles.filter(function (role) { return role.id === "sales"; })[0];
+      select.value = sales ? sales.id : (state.roles[0] ? state.roles[0].id : "");
+    }
+  }
+
   function openEditor(user) {
     state.mode = user ? "edit" : "create";
     state.editing = user || null;
@@ -76,7 +96,7 @@
     username.value = user ? user.username : "";
     username.disabled = Boolean(user);
     document.getElementById("field-display").value = user ? user.displayName : "";
-    document.getElementById("field-role").value = user ? user.role : "sales";
+    fillRoleSelect(user ? user.role : "sales");
     document.getElementById("field-active").value = !user || user.active ? "true" : "false";
     document.getElementById("field-password").value = "";
     var self = Boolean(user && state.me && user.id === state.me.id);
@@ -91,18 +111,16 @@
 
   function load() {
     setStatus("讀取中");
-    return Promise.all([api("/api/auth/me"), api("/api/users")]).then(function (results) {
+    return Promise.all([api("/api/auth/me"), api("/api/users"), api("/api/roles")]).then(function (results) {
       var me = results[0];
       var list = results[1];
+      var roles = results[2];
       if (me.status === 401) {
         location.href = "/login";
         return;
       }
-      if (me.status === 403 || list.status === 403) {
-        setStatus("沒有權限", true);
-        return;
-      }
-      if (!me.data || me.data.authenticated !== true || me.data.role !== "admin") {
+      var permissions = me.data && Array.isArray(me.data.permissions) ? me.data.permissions : [];
+      if (me.status === 403 || list.status === 403 || permissions.indexOf("users.manage") < 0) {
         setStatus("沒有權限", true);
         return;
       }
@@ -110,8 +128,13 @@
         setStatus("無法讀取帳號", true);
         return;
       }
+      if (roles.status !== 200 || !Array.isArray(roles.data.items)) {
+        setStatus("無法讀取角色", true);
+        return;
+      }
       state.me = me.data;
       state.items = list.data.items;
+      state.roles = roles.data.items;
       setStatus("");
       render();
     }).catch(function () {

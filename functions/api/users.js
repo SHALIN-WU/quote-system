@@ -1,6 +1,6 @@
-import { requireAdmin } from "../_lib/auth.js";
+import { requirePermission } from "../_lib/auth.js";
 import { json, readJson } from "../_lib/http.js";
-import { createUser, listUsers, ROLES } from "../_lib/users.js";
+import { createUser, listUsers } from "../_lib/users.js";
 
 function readNewUser(body) {
   const username = String(body?.username || "").trim().toLowerCase();
@@ -8,12 +8,11 @@ function readNewUser(body) {
   const role = String(body?.role || "").trim();
   const password = String(body?.password || "");
   const active = body?.active === false ? false : true;
-  if (!ROLES.includes(role)) return { error: "角色不正確" };
   return { data: { username, displayName, role, password, active } };
 }
 
 export async function onRequestGet(context) {
-  const gate = await requireAdmin(context.request, context.env);
+  const gate = await requirePermission(context.request, context.env, "users.manage");
   if (gate.response) return gate.response;
   try {
     const items = await listUsers(context.env.DB);
@@ -25,7 +24,7 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
-  const gate = await requireAdmin(context.request, context.env);
+  const gate = await requirePermission(context.request, context.env, "users.manage");
   if (gate.response) return gate.response;
 
   let body;

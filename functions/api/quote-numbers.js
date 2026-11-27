@@ -1,11 +1,12 @@
-import { forbidUnless, requireUser } from "../_lib/auth.js";
+import { requireUser } from "../_lib/auth.js";
+import { forbidUnlessPermission } from "../_lib/permissions.js";
 import { json, readJson } from "../_lib/http.js";
 import { allocateNumber } from "../_lib/quoteStore.js";
 
 export async function onRequestPost(context) {
   const gate = await requireUser(context.request, context.env);
   if (gate.response) return gate.response;
-  const denied = forbidUnless(gate.user, ["admin", "sales"]);
+  const denied = forbidUnlessPermission(gate.user, "quote.write");
   if (denied) return denied;
   let body;
   try {

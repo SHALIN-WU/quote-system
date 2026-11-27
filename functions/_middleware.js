@@ -32,8 +32,20 @@ function wantsHtml(request, path) {
   return path === "/" || path.endsWith(".html");
 }
 
-function isAdminPath(path) {
-  return path === "/admin" || path.startsWith("/admin/") || path === "/api/users" || path.startsWith("/api/users/");
+function requiredPermissions(path, method) {
+  if (path === "/admin/users" || path === "/admin/users.html") return ["users.manage"];
+  if (path === "/admin/menus" || path === "/admin/menus.html") return ["menus.manage"];
+  if (path === "/admin/roles" || path === "/admin/roles.html") return ["roles.manage"];
+  if (path === "/api/users" || path.startsWith("/api/users/")) return ["users.manage"];
+  if (path === "/api/roles" && method === "GET") return ["users.manage", "roles.manage", "menus.manage"];
+  if (path === "/api/roles" || path.startsWith("/api/roles/")) return ["roles.manage"];
+  if (path === "/admin" || path.startsWith("/admin/")) return ["roles.manage"];
+  return null;
+}
+
+function allows(user, permissions) {
+  const owned = user.permissions || [];
+  return permissions.some((permission) => owned.includes(permission));
 }
 
 function redirectToLogin(request) {
@@ -69,7 +81,8 @@ export async function onRequest(context) {
       if (wantsHtml(context.request, path)) return redirectToLogin(context.request);
       return json({ error: "尚未登入" }, 401);
     }
-    if (isAdminPath(path) && user.role !== "admin") {
+    const needed = requiredPermissions(path, context.request.method);
+    if (needed && !allows(user, needed)) {
       if (wantsHtml(context.request, path)) return forbiddenPage();
       return json({ error: "沒有權限" }, 403);
     }

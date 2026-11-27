@@ -253,6 +253,26 @@ function buildDocument(input, fixed) {
   };
 }
 
+function clearIncomingCost(document) {
+  document.markupPercent = "";
+  document.items = document.items.map((item) => ({ ...item, costPrice: "" }));
+  return document;
+}
+
+function keepStoredCost(document, previous) {
+  const prevItems = new Map();
+  for (const item of (previous && previous.items) || []) {
+    if (item && item.id) prevItems.set(item.id, item);
+  }
+  document.markupPercent = text(previous && previous.markupPercent, 40);
+  document.items = document.items.map((item) => {
+    const prev = item.id ? prevItems.get(item.id) : null;
+    return { ...item, costPrice: prev ? keepAmount(prev.costPrice) : "" };
+  });
+  return document;
+}
+
+// 沒有「看成本與毛利」時使用。不回 costPrice、markupPercent，也不回 profit、margin、marginRate。
 function stripDocument(doc) {
   return {
     id: doc.id,
@@ -301,7 +321,7 @@ async function loadNames(db) {
   return names;
 }
 
-function present(row, names, role, withDocument) {
+function present(row, names, canSeeCost, withDocument) {
   const item = {
     id: row.id,
     quoteNumber: row.quote_number,
@@ -320,7 +340,7 @@ function present(row, names, role, withDocument) {
   };
   if (withDocument) {
     const doc = JSON.parse(row.document);
-    item.document = role === "service" ? stripDocument(doc) : doc;
+    item.document = canSeeCost ? doc : stripDocument(doc);
   }
   return item;
 }
@@ -362,7 +382,7 @@ export async function listQuotes(db, query) {
   const result = await db.prepare(sql).bind(...binds).all();
   const names = await loadNames(db);
   return {
-    items: (result.results || []).map((row) => present(row, names, query.role, false)),
+    items: (result.results || []).map((row) => present(row, names, !!query.canSeeCost, false)),
     limit: LIST_LIMIT
   };
 }
@@ -371,18 +391,18 @@ async function readRow(db, id) {
   return db.prepare("SELECT * FROM quotes WHERE id = ?").bind(id).first();
 }
 
-export async function getQuote(db, id, role) {
+export async function getQuote(db, id, canSeeCost) {
   const row = await readRow(db, id);
   if (!row) return null;
   const names = await loadNames(db);
-  return present(row, names, role, true);
+  return present(row, names, !!canSeeCost, true);
 }
 
 function quoteDateOf(input) {
   return cleanDate(input && input.quoteDate) || new Date().toISOString().slice(0, 10);
 }
 
-export async function createQuote(db, user, input) {
+export async function createQuote(db, user, input, options = {}) {
   const requested = text(input && input.quoteNumber, 40).trim();
   const quoteNumber = requested ? await assertIssued(db, requested) : await allocateNumber(db, quoteDateOf(input));
   const taken = await db.prepare("SELECT id FROM quotes WHERE quote_number = ?").bind(quoteNumber).first();
@@ -410,6 +430,7 @@ export async function createQuote(db, user, input) {
   });
   if (!document.direction) fail("請選擇進口或出口");
   document.taxRate = 0.05;
+  if (!options.canSeeCost) clearIncomingCost(document);
   const totals = JSON.stringify(displayTotals(customerItems(document), document));
   try {
     await db.prepare(`INSERT INTO quotes (
@@ -440,10 +461,10 @@ export async function createQuote(db, user, input) {
     }
     throw error;
   }
-  return getQuote(db, id, user.role);
+  return getQuote(db, id, !!options.canSeeCost);
 }
 
-export async function updateQuote(db, user, id, input, updatedAt) {
+export async function updateQuote(db, user, id, input, updatedAt, options = {}) {
   const current = await readRow(db, id);
   if (!current) return null;
   if (!updatedAt || String(updatedAt) !== current.updated_at) {
@@ -470,6 +491,7 @@ export async function updateQuote(db, user, id, input, updatedAt) {
   });
   document.taxRate = cleanTaxRate(current.tax_rate);
   if (document.taxRate > 0 && !document.direction) fail("請選擇進口或出口");
+  if (!options.canSeeCost) keepStoredCost(document, previous);
   const totals = JSON.stringify(displayTotals(customerItems(document), document));
   const result = await db.prepare(`UPDATE quotes SET
       customer_name = ?, quote_date = ?, valid_until = ?, mode = ?, route = ?, direction = ?, tax_rate = ?, document = ?, selling_totals = ?,
@@ -494,7 +516,7 @@ export async function updateQuote(db, user, id, input, updatedAt) {
     error.code = "CONFLICT";
     throw error;
   }
-  return getQuote(db, id, user.role);
+  return getQuote(db, id, !!options.canSeeCost);
 }
 
 export async function deleteQuote(db, id) {

@@ -10,7 +10,8 @@ export async function onRequestGet(context) {
       id: user.id,
       username: user.username,
       displayName: user.displayName,
-      role: user.role
+      role: user.role,
+      permissions: user.permissions || []
     });
   } catch (error) {
     console.error("session lookup failed");

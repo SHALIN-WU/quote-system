@@ -1,4 +1,5 @@
-const ROLES = ["admin", "sales", "service"];
+import { SYSTEM_MENU_PERMISSIONS } from "./permissions.js";
+
 const MAX_NODES = 80;
 
 function fail(message) {
@@ -31,12 +32,23 @@ function cleanHref(value) {
   return url.toString();
 }
 
-function cleanRoles(value, lockAdmin) {
+async function cleanRoles(db, value, lockAdmin) {
   if (!Array.isArray(value)) fail("請選擇角色");
-  const unique = ROLES.filter((role) => value.includes(role));
-  if (!unique.length) fail("至少要給一個角色");
-  if (lockAdmin && !unique.includes("admin")) fail("這個項目不能對管理員隱藏");
-  return unique;
+  const wanted = [];
+  for (const entry of value) {
+    const role = String(entry || "").trim();
+    if (!role || wanted.includes(role)) continue;
+    if (!/^[A-Za-z0-9-]{1,80}$/.test(role)) fail("角色不正確");
+    wanted.push(role);
+  }
+  if (!wanted.length) fail("至少要給一個角色");
+  if (wanted.length > 40) fail("角色不正確");
+  const placeholders = wanted.map(() => "?").join(", ");
+  const rows = await db.prepare(`SELECT id FROM roles WHERE id IN (${placeholders})`).bind(...wanted).all();
+  const found = new Set((rows.results || []).map((row) => row.id));
+  if (wanted.some((role) => !found.has(role))) fail("角色不正確");
+  if (lockAdmin && !wanted.includes("admin")) fail("這個項目不能對管理員隱藏");
+  return wanted;
 }
 
 function mapNode(row, roles) {
@@ -85,14 +97,22 @@ function publicNode(node) {
   };
 }
 
+function canSeeItem(item, role, permissions) {
+  if (!item.visible) return false;
+  const needed = SYSTEM_MENU_PERMISSIONS[item.key];
+  if (item.isSystem && needed) return needed.some((key) => permissions.includes(key));
+  return item.roles.includes(role);
+}
+
 export async function listMenus(db, options = {}) {
   const tree = buildTree(await loadRows(db));
   if (options.manage) return tree;
-  const role = options.role;
+  const role = options.role || "";
+  const permissions = Array.isArray(options.permissions) ? options.permissions : [];
   return tree
     .filter((group) => group.visible)
     .map((group) => {
-      const children = group.children.filter((item) => item.visible && item.roles.includes(role));
+      const children = group.children.filter((item) => canSeeItem(item, role, permissions));
       if (!children.length) return null;
       return {
         ...publicNode(group),
@@ -135,7 +155,7 @@ export async function createMenuNode(db, input) {
     if (!parent || parent.kind !== "group" || parent.parent_id) fail("請把項目放進群組");
   }
   const target = kind === "item" ? cleanHref(input.href) : "";
-  const roles = kind === "item" ? cleanRoles(input.roles, false) : [];
+  const roles = kind === "item" ? await cleanRoles(db, input.roles, false) : [];
   const id = crypto.randomUUID();
   const key = "custom-" + id.replace(/-/g, "");
   const now = nowIso();
@@ -181,7 +201,7 @@ export async function updateMenuNode(db, id, patch) {
   }
   if (patch.roles != null) {
     if (isGroup) fail("群組不設定角色");
-    const roles = cleanRoles(patch.roles, lockAdmin);
+    const roles = await cleanRoles(db, patch.roles, lockAdmin);
     await replaceRoles(db, id, roles);
   }
   await db.prepare(`UPDATE menu_nodes

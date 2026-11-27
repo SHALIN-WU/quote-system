@@ -1,5 +1,6 @@
 import { json } from "./http.js";
 import { hashPassword, sha256Equal, verifyPassword } from "./password.js";
+import { forbidUnlessAnyPermission, forbidUnlessPermission, loadPermissions } from "./permissions.js";
 import { countUsers, createUser, getUserById, getUserByUsername, touchLastLogin } from "./users.js";
 
 const COOKIE_NAME = "quote_session";
@@ -227,7 +228,8 @@ export async function requireActiveUser(request, env) {
   const user = await getUserById(env.DB, session.id);
   if (!user || !user.active) return null;
   if (user.username !== session.username) return null;
-  return user;
+  const permissions = await loadPermissions(env.DB, user.role);
+  return { ...user, permissions };
 }
 
 export async function requireUser(request, env) {
@@ -237,15 +239,18 @@ export async function requireUser(request, env) {
   return { user, response: null };
 }
 
-export function forbidUnless(user, roles) {
-  if (!roles.includes(user.role)) return json({ error: "沒有權限" }, 403);
-  return null;
-}
-
-export async function requireAdmin(request, env) {
+export async function requirePermission(request, env, permission) {
   const gate = await requireUser(request, env);
   if (gate.response) return gate;
-  const denied = forbidUnless(gate.user, ["admin"]);
+  const denied = forbidUnlessPermission(gate.user, permission);
+  if (denied) return { user: gate.user, response: denied };
+  return gate;
+}
+
+export async function requireAnyPermission(request, env, permissions) {
+  const gate = await requireUser(request, env);
+  if (gate.response) return gate;
+  const denied = forbidUnlessAnyPermission(gate.user, permissions);
   if (denied) return { user: gate.user, response: denied };
   return gate;
 }

@@ -1,12 +1,10 @@
-import { forbidUnless, requireUser } from "../../_lib/auth.js";
+import { requirePermission } from "../../_lib/auth.js";
 import { json, readJson } from "../../_lib/http.js";
 import { listMenus, reorderMenus } from "../../_lib/menus.js";
 
 export async function onRequestPut(context) {
-  const gate = await requireUser(context.request, context.env);
+  const gate = await requirePermission(context.request, context.env, "menus.manage");
   if (gate.response) return gate.response;
-  const denied = forbidUnless(gate.user, ["admin"]);
-  if (denied) return denied;
   let body;
   try {
     body = await readJson(context.request);

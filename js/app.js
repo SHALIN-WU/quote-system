@@ -70,16 +70,41 @@
     return NG.currentUser && NG.currentUser.role ? NG.currentUser.role : "";
   }
 
+  function can(permission) {
+    const list = NG.currentUser && NG.currentUser.permissions;
+    return Array.isArray(list) && list.indexOf(permission) >= 0;
+  }
+
   function canWrite() {
-    return roleName() === "admin" || roleName() === "sales";
+    return can("quote.write");
   }
 
   function canSeeCost() {
-    return canWrite();
+    return can("quote.cost");
   }
 
-  function isAdmin() {
-    return roleName() === "admin";
+  function canCopy() {
+    return can("quote.copy");
+  }
+
+  function canDeleteQuote() {
+    return can("quote.delete");
+  }
+
+  function canCalc() {
+    return can("settings.calc");
+  }
+
+  function canExportBackup() {
+    return can("backup.export");
+  }
+
+  function canImportBackup() {
+    return can("backup.import");
+  }
+
+  function canOpenBackup() {
+    return canImportBackup();
   }
 
   let currentView = "new-quote";
@@ -112,7 +137,11 @@
       backup: "view-backup",
     };
     if (!views[name]) return;
-    if ((name === "calc" || name === "backup") && !isAdmin()) {
+    if (name === "calc" && !canCalc()) {
+      setStatus("沒有權限");
+      return;
+    }
+    if (name === "backup" && !canOpenBackup()) {
       setStatus("沒有權限");
       return;
     }
@@ -1270,7 +1299,7 @@
     if (!canWrite()) return;
     const target = event.target;
     if (target.dataset && target.dataset.setting) {
-      if (!isAdmin()) return;
+      if (!canCalc()) return;
       const key = target.dataset.setting;
       const value = parseFloat(target.value);
       if (!isFinite(value) || !(value > 0)) return;
@@ -1878,8 +1907,8 @@
 
   function historyButtons(quote) {
     const pairs = [["載入", "load-quote"]];
-    if (canWrite()) pairs.push(["複製", "copy-quote"]);
-    if (isAdmin()) pairs.push(["刪除", "delete-quote"]);
+    if (canCopy()) pairs.push(["複製", "copy-quote"]);
+    if (canDeleteQuote()) pairs.push(["刪除", "delete-quote"]);
     return pairs.map(function (pair) {
       const button = document.createElement("button");
       button.type = "button";
@@ -1979,7 +2008,7 @@
   }
 
   async function copyQuote(id) {
-    if (!canWrite()) {
+    if (!canCopy()) {
       setStatus("沒有權限，沒有新增報價");
       return;
     }
@@ -2011,7 +2040,11 @@
     applyState(next, { skipDraft: true });
     scheduleDraft();
     showView("new-quote");
-    setStep("price", true);
+    setStep(canSeeCost() ? "price" : "quote", true);
+    if (!canWrite()) {
+      setStatus("已複製內容，沒有編輯權限，尚未存到伺服器。");
+      return;
+    }
     try {
       await ensureNumber();
     } catch (error) {
@@ -2022,7 +2055,7 @@
   }
 
   async function deleteQuote(id, quoteNumber) {
-    if (!isAdmin()) {
+    if (!canDeleteQuote()) {
       setStatus("沒有權限，沒有刪除");
       return;
     }
@@ -2206,7 +2239,7 @@
   }
 
   function scheduleSharedSettings() {
-    if (!isAdmin()) return;
+    if (!canCalc()) return;
     window.clearTimeout(settingsTimer);
     settingsTimer = window.setTimeout(function () {
       settingsTimer = 0;
@@ -2262,25 +2295,27 @@
   function applyRole() {
     const cost = canSeeCost();
     const write = canWrite();
-    const admin = isAdmin();
+    const calc = canCalc();
     document.body.dataset.role = roleName();
+    document.body.dataset.write = write ? "1" : "0";
+    document.body.dataset.cost = cost ? "1" : "0";
     renderCalcLine();
     if ($("new-quote")) $("new-quote").hidden = !write;
     if ($("save-quote")) $("save-quote").hidden = !write;
     ["btn-word", "btn-excel", "btn-pdf", "parse-text"].forEach(function (id) {
       if ($(id)) $(id).hidden = !write;
     });
-    if ($("backup-import")) $("backup-import").hidden = !admin;
-    if ($("backup-export")) $("backup-export").hidden = !cost;
+    if ($("backup-import")) $("backup-import").hidden = !canImportBackup();
+    if ($("backup-export")) $("backup-export").hidden = !canExportBackup();
     ["import", "price"].forEach(function (step) {
       const button = document.querySelector('[data-step="' + step + '"]');
       if (button) button.hidden = !cost;
     });
     const bar = document.querySelector(".markup-bar");
     if (bar) bar.hidden = !cost;
-    if ($("reset-settings")) $("reset-settings").hidden = !admin;
+    if ($("reset-settings")) $("reset-settings").hidden = !calc;
     ["set-air", "set-sea", "set-express", "set-cai"].forEach(function (id) {
-      if ($(id)) $(id).disabled = !admin;
+      if ($(id)) $(id).disabled = !calc;
     });
     if ($("quote-number")) $("quote-number").readOnly = true;
     paintGuard();
@@ -2301,7 +2336,7 @@
   }
 
   async function exportBackupFile() {
-    if (!canSeeCost()) {
+    if (!canExportBackup()) {
       const message = "沒有權限，沒有下載備份。";
       showBackupMsg(message, true);
       setStatus(message);
@@ -2341,7 +2376,7 @@
   }
 
   async function confirmBackupImport() {
-    if (!isAdmin()) {
+    if (!canImportBackup()) {
       const message = "沒有權限，沒有變更現有資料。";
       showBackupMsg(message, true);
       setStatus(message);
@@ -2483,7 +2518,7 @@
     $("apply-markup").addEventListener("click", applyMarkup);
     $("recalc-qty").addEventListener("click", recalcQty);
     $("reset-settings").addEventListener("click", function () {
-      if (!isAdmin()) {
+      if (!canCalc()) {
         setStatus("沒有權限，計算設定沒有變更");
         return;
       }
@@ -2644,7 +2679,7 @@
       const button = event.target.closest("button, a");
       if (!button) return;
       if (button.closest("#sidenav") || button.id === "nav-open" || button.id === "nav-close") return;
-      if (button.id === "print-quote" || button.id === "export-quote" || button.id === "btn-logout" || button.id === "legacy-download") return;
+      if (button.id === "print-quote" || button.id === "export-quote" || button.id === "backup-export" || button.id === "btn-logout" || button.id === "legacy-download") return;
       if (button.dataset && button.dataset.action === "load-quote") return;
       if (button.dataset && (button.dataset.step || button.dataset.stepNext)) return;
       event.preventDefault();
@@ -2685,7 +2720,8 @@
     let view = canWrite() ? "new-quote" : "history";
     if (requested === "history") view = "history";
     if (requested === "new-quote" && canWrite()) view = "new-quote";
-    if ((requested === "calc" || requested === "backup") && isAdmin()) view = requested;
+    if (requested === "calc" && canCalc()) view = "calc";
+    if (requested === "backup" && canOpenBackup()) view = "backup";
     showView(view);
     if (requested) history.replaceState(null, "", location.pathname);
     const paste = $("paste-text");

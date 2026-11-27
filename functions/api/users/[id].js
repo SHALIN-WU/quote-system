@@ -1,6 +1,6 @@
-import { requireAdmin } from "../../_lib/auth.js";
+import { requirePermission } from "../../_lib/auth.js";
 import { json, readJson } from "../../_lib/http.js";
-import { countAdmins, getUserById, ROLES, updateUser } from "../../_lib/users.js";
+import { countAdmins, getUserById, updateUser } from "../../_lib/users.js";
 
 function validId(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id || ""));
@@ -9,11 +9,7 @@ function validId(id) {
 function readPatch(body) {
   const data = {};
   if (body.displayName != null) data.displayName = String(body.displayName);
-  if (body.role != null) {
-    const role = String(body.role).trim();
-    if (!ROLES.includes(role)) return { error: "角色不正確" };
-    data.role = role;
-  }
+  if (body.role != null) data.role = String(body.role).trim();
   if (body.active != null) {
     if (typeof body.active !== "boolean") return { error: "狀態不正確" };
     data.active = body.active;
@@ -23,7 +19,7 @@ function readPatch(body) {
 }
 
 export async function onRequestGet(context) {
-  const gate = await requireAdmin(context.request, context.env);
+  const gate = await requirePermission(context.request, context.env, "users.manage");
   if (gate.response) return gate.response;
   if (!validId(context.params.id)) return json({ error: "找不到帳號" }, 404);
   const item = await getUserById(context.env.DB, context.params.id);
@@ -32,7 +28,7 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPatch(context) {
-  const gate = await requireAdmin(context.request, context.env);
+  const gate = await requirePermission(context.request, context.env, "users.manage");
   if (gate.response) return gate.response;
   if (!validId(context.params.id)) return json({ error: "找不到帳號" }, 404);
 

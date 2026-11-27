@@ -1,4 +1,5 @@
-import { forbidUnless, requireUser } from "../_lib/auth.js";
+import { requireUser } from "../_lib/auth.js";
+import { forbidUnlessPermission } from "../_lib/permissions.js";
 import { json, readJson } from "../_lib/http.js";
 import { getSettings, updateSettings } from "../_lib/quoteStore.js";
 
@@ -22,7 +23,7 @@ export async function onRequestGet(context) {
 export async function onRequestPut(context) {
   const gate = await requireUser(context.request, context.env);
   if (gate.response) return gate.response;
-  const denied = forbidUnless(gate.user, ["admin"]);
+  const denied = forbidUnlessPermission(gate.user, "settings.calc");
   if (denied) return denied;
   let body;
   try {

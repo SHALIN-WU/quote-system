@@ -254,13 +254,13 @@ pre {
 #quote-edit .q-add { margin-top: 6px; }
 #quote-edit td input,
 #quote-edit td select { background: white; padding: 2px 4px; font-size: 12px; }
-body[data-role="service"] :is(#panel-import, #panel-cargo, #panel-price, #panel-quote) :is(input, textarea, select):disabled {
+body[data-write="0"] :is(#panel-import, #panel-cargo, #panel-price, #panel-quote) :is(input, textarea, select):disabled {
   background: #f3f1ea;
   color: var(--ink);
   opacity: 1;
   cursor: default;
 }
-body[data-role="service"] :is(#panel-import, #panel-cargo, #panel-price, #panel-quote) button:disabled {
+body[data-write="0"] :is(#panel-import, #panel-cargo, #panel-price, #panel-quote) button:disabled {
   cursor: default;
 }
 .q-remarks { white-space: pre-wrap; margin: 10px 0 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
@@ -474,7 +474,7 @@ html.auth-locked body > :not(#auth-gate) { visibility: hidden; }
 .menu-row.is-child { margin-left: 18px; border-top: 1px solid var(--line); }
 .menu-title { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .menu-roles { display: flex; gap: 12px; flex-wrap: wrap; }
-body[data-role="service"] .calc-line { display: none !important; }
+body[data-cost="0"] .calc-line { display: none !important; }
 
 @media (max-width: 860px) {
   .app-shell { display: block; }
